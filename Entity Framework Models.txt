@@ -647,3 +647,27 @@ public class AccountController
         return _context.Users.FirstOrDefault(u => u.Username == username && u.Password == password);
     }
 }
+
+CREATE TABLE Products (
+    ProductId INT PRIMARY KEY IDENTITY(1,1),
+    ProductName NVARCHAR(50) NOT NULL,
+    Price DECIMAL(18, 2) NOT NULL,
+    Stock INT NOT NULL
+);
+
+CREATE TABLE Cart (
+    CartId INT PRIMARY KEY IDENTITY(1,1),
+    UserId INT NOT NULL,
+    ProductId INT NOT NULL,
+    Quantity INT NOT NULL,
+    FOREIGN KEY (UserId) REFERENCES Users(UserId),
+    FOREIGN KEY (ProductId) REFERENCES Products(ProductId)
+);
+
+CREATE TABLE Invoices (
+    InvoiceId INT PRIMARY KEY IDENTITY(1,1),
+    UserId INT NOT NULL,
+    TotalAmount DECIMAL(18, 2) NOT NULL,
+    Date DATETIME NOT NULL,
+    FOREIGN KEY (UserId) REFERENCES Users(UserId)
+);
