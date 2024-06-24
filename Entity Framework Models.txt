@@ -1,0 +1,649 @@
+ Entity Framework Models
+Models/User.cs
+
+csharp
+Copy code
+public class User
+{
+    public int UserID { get; set; }
+    public string Username { get; set; }
+    public string Password { get; set; }
+}
+Models/Product.cs
+
+csharp
+Copy code
+public class Product
+{
+    public int ProductID { get; set; }
+    public string ProductName { get; set; }
+    public string Description { get; set; }
+    public decimal Price { get; set; }
+    public int Stock { get; set; }
+}
+Models/Order.cs
+
+csharp
+Copy code
+public class Order
+{
+    public int OrderID { get; set; }
+    public int UserID { get; set; }
+    public DateTime OrderDate { get; set; }
+    public decimal TotalAmount { get; set; }
+
+    public User User { get; set; }
+    public ICollection<OrderItem> OrderItems { get; set; }
+}
+Models/OrderItem.cs
+
+csharp
+Copy code
+public class OrderItem
+{
+    public int OrderItemID { get; set; }
+    public int OrderID { get; set; }
+    public int ProductID { get; set; }
+    public int Quantity { get; set; }
+    public decimal Price { get; set; }
+
+    public Order Order { get; set; }
+    public Product Product { get; set; }
+}
+Models/Discount.cs
+
+csharp
+Copy code
+public class Discount
+{
+    public int DiscountID { get; set; }
+    public string DiscountCode { get; set; }
+    public decimal DiscountPercentage { get; set; }
+}
+Models/CartItem.cs
+
+csharp
+Copy code
+public class CartItem
+{
+    public int CartItemID { get; set; }
+    public int UserID { get; set; }
+    public int ProductID { get; set; }
+    public int Quantity { get; set; }
+
+    public User User { get; set; }
+    public Product Product { get; set; }
+}
+3. Entity Framework Context
+Data/ShoppingCartContext.cs
+
+csharp
+Copy code
+using Microsoft.EntityFrameworkCore;
+
+public class ShoppingCartContext : DbContext
+{
+    public DbSet<User> Users { get; set; }
+    public DbSet<Product> Products { get; set; }
+    public DbSet<Order> Orders { get; set; }
+    public DbSet<OrderItem> OrderItems { get; set; }
+    public DbSet<Discount> Discounts { get; set; }
+    public DbSet<CartItem> CartItems { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.UseSqlServer("Server=srvcldrnpu003\\MSPARMRNPD101;Database=ShoppingCart;User Id=beyadm;Password=beyadm@123;");
+    }
+}
+4. Implement the Controllers
+Controllers/AccountController.cs
+
+csharp
+Copy code
+using System.Linq;
+
+public class AccountController
+{
+    public bool Register(string username, string password)
+    {
+        using (var context = new ShoppingCartContext())
+        {
+            if (context.Users.Any(u => u.Username == username))
+            {
+                return false; // User already exists
+            }
+
+            var user = new User { Username = username, Password = password };
+            context.Users.Add(user);
+            context.SaveChanges();
+            return true;
+        }
+    }
+
+    public User Login(string username, string password)
+    {
+        using (var context = new ShoppingCartContext())
+        {
+            return context.Users.FirstOrDefault(u => u.Username == username && u.Password == password);
+        }
+    }
+}
+Controllers/ProductController.cs
+
+csharp
+Copy code
+using System.Collections.Generic;
+using System.Linq;
+
+public class ProductController
+{
+    public List<Product> GetProducts()
+    {
+        using (var context = new ShoppingCartContext())
+        {
+            return context.Products.ToList();
+        }
+    }
+
+    public void AddToCart(int userId, int productId, int quantity)
+    {
+        using (var context = new ShoppingCartContext())
+        {
+            var cartItem = new CartItem
+            {
+                UserID = userId,
+                ProductID = productId,
+                Quantity = quantity
+            };
+            context.CartItems.Add(cartItem);
+            context.SaveChanges();
+        }
+    }
+
+    public void ApplyDiscount(string discountCode, List<CartItem> cartItems)
+    {
+        using (var context = new ShoppingCartContext())
+        {
+            var discount = context.Discounts.FirstOrDefault(d => d.DiscountCode == discountCode);
+            if (discount != null)
+            {
+                foreach (var item in cartItems)
+                {
+                    var product = context.Products.Find(item.ProductID);
+                    if (product != null)
+                    {
+                        item.Quantity -= (int)(item.Quantity * (discount.DiscountPercentage / 100));
+                    }
+                }
+            }
+        }
+    }
+}
+Controllers/OrderController.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+public class OrderController
+{
+    public void Checkout(int userId, List<CartItem> cartItems)
+    {
+        using (var context = new ShoppingCartContext())
+        {
+            var order = new Order
+            {
+                UserID = userId,
+                OrderDate = DateTime.Now,
+                TotalAmount = cartItems.Sum(ci => ci.Quantity * context.Products.Find(ci.ProductID).Price)
+            };
+
+            context.Orders.Add(order);
+            context.SaveChanges();
+
+            foreach (var item in cartItems)
+            {
+                var orderItem = new OrderItem
+                {
+                    OrderID = order.OrderID,
+                    ProductID = item.ProductID,
+                    Quantity = item.Quantity,
+                    Price = context.Products.Find(item.ProductID).Price
+                };
+
+                context.OrderItems.Add(orderItem);
+            }
+
+            context.CartItems.RemoveRange(cartItems);
+            context.SaveChanges();
+        }
+    }
+}
+5. Implement the Views
+Views/LoginForm.cs
+
+csharp
+Copy code
+using System;
+using System.Windows.Forms;
+
+public partial class LoginForm : Form
+{
+    private readonly AccountController _accountController;
+
+    public LoginForm()
+    {
+        InitializeComponent();
+        _accountController = new AccountController();
+    }
+
+    private void btnLogin_Click(object sender, EventArgs e)
+    {
+        var user = _accountController.Login(txtUsername.Text, txtPassword.Text);
+        if (user != null)
+        {
+            var productForm = new ProductForm(user.UserID);
+            productForm.Show();
+            this.Hide();
+        }
+        else
+        {
+            MessageBox.Show("Invalid username or password.");
+        }
+    }
+
+    private void btnRegister_Click(object sender, EventArgs e)
+    {
+        var registerForm = new
+continue
+ChatGPT
+Sure, let's continue with the implementation of the views and then provide an overview of the unit tests and integration tests.
+
+Implementing the Views (Continued)
+Views/RegisterForm.cs
+
+csharp
+Copy code
+using System;
+using System.Windows.Forms;
+
+public partial class RegisterForm : Form
+{
+    private readonly AccountController _accountController;
+
+    public RegisterForm()
+    {
+        InitializeComponent();
+        _accountController = new AccountController();
+    }
+
+    private void btnRegister_Click(object sender, EventArgs e)
+    {
+        bool registered = _accountController.Register(txtUsername.Text, txtPassword.Text);
+        if (registered)
+        {
+            MessageBox.Show("Registration successful!");
+            var loginForm = new LoginForm();
+            loginForm.Show();
+            this.Hide();
+        }
+        else
+        {
+            MessageBox.Show("Username already exists. Please choose a different username.");
+        }
+    }
+}
+Views/ProductForm.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows.Forms;
+
+public partial class ProductForm : Form
+{
+    private readonly int _userId;
+    private readonly ProductController _productController;
+    private List<Product> _cart;
+
+    public ProductForm(int userId)
+    {
+        InitializeComponent();
+        _userId = userId;
+        _productController = new ProductController();
+        _cart = new List<Product>();
+        LoadProducts();
+    }
+
+    private void LoadProducts()
+    {
+        dgvProducts.DataSource = _productController.GetProducts();
+    }
+
+    private void btnAddToCart_Click(object sender, EventArgs e)
+    {
+        int productId = int.Parse(txtProductID.Text);
+        int quantity = int.Parse(txtQuantity.Text);
+        _productController.AddToCart(_userId, productId, quantity);
+        MessageBox.Show("Product added to cart!");
+    }
+
+    private void btnCheckout_Click(object sender, EventArgs e)
+    {
+        var checkoutForm = new CheckoutForm(_userId, _cart);
+        checkoutForm.Show();
+    }
+
+    private void btnApplyDiscount_Click(object sender, EventArgs e)
+    {
+        string discountCode = txtDiscountCode.Text;
+        _productController.ApplyDiscount(discountCode, _cart);
+        MessageBox.Show("Discount applied successfully!");
+    }
+}
+Views/CheckoutForm.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows.Forms;
+
+public partial class CheckoutForm : Form
+{
+    private readonly int _userId;
+    private readonly List<Product> _cart;
+    private readonly OrderController _orderController;
+
+    public CheckoutForm(int userId, List<Product> cart)
+    {
+        InitializeComponent();
+        _userId = userId;
+        _cart = cart;
+        _orderController = new OrderController();
+        DisplayCart();
+        CalculateTotal();
+    }
+
+    private void DisplayCart()
+    {
+        dgvCart.DataSource = _cart;
+    }
+
+    private void CalculateTotal()
+    {
+        decimal total = _cart.Sum(p => p.Price);
+        lblTotal.Text = $"Total: {total:C}";
+    }
+
+    private void btnPlaceOrder_Click(object sender, EventArgs e)
+    {
+        _orderController.Checkout(_userId, _cart);
+        MessageBox.Show("Order placed successfully!");
+        this.Close();
+    }
+}
+Implementing Unit Tests
+Unit tests are designed to test individual units (functions, methods) of the application.
+
+ShoppingCartApp.Tests/UserTests.cs
+
+csharp
+Copy code
+using NUnit.Framework;
+
+[TestFixture]
+public class UserTests
+{
+    private AccountController _accountController;
+
+    [SetUp]
+    public void Setup()
+    {
+        _accountController = new AccountController();
+    }
+
+    [Test]
+    public void Register_NewUser_Success()
+    {
+        // Arrange
+        string username = "testuser";
+        string password = "testpassword";
+
+        // Act
+        bool registered = _accountController.Register(username, password);
+
+        // Assert
+        Assert.IsTrue(registered);
+    }
+
+    [Test]
+    public void Register_ExistingUser_Failure()
+    {
+        // Arrange
+        string username = "user1";
+        string password = "password1";
+
+        // Act
+        bool registered = _accountController.Register(username, password);
+
+        // Assert
+        Assert.IsFalse(registered);
+    }
+
+    [Test]
+    public void Login_ValidCredentials_Success()
+    {
+        // Arrange
+        string username = "user1";
+        string password = "password1";
+
+        // Act
+        var user = _accountController.Login(username, password);
+
+        // Assert
+        Assert.IsNotNull(user);
+    }
+
+    [Test]
+    public void Login_InvalidCredentials_Failure()
+    {
+        // Arrange
+        string username = "invaliduser";
+        string password = "invalidpassword";
+
+        // Act
+        var user = _accountController.Login(username, password);
+
+        // Assert
+        Assert.IsNull(user);
+    }
+}
+ShoppingCartApp.Tests/ProductTests.cs
+
+csharp
+Copy code
+using NUnit.Framework;
+using System.Collections.Generic;
+
+[TestFixture]
+public class ProductTests
+{
+    private ProductController _productController;
+
+    [SetUp]
+    public void Setup()
+    {
+        _productController = new ProductController();
+    }
+
+    [Test]
+    public void GetProducts_ReturnsProducts()
+    {
+        // Act
+        var products = _productController.GetProducts();
+
+        // Assert
+        Assert.IsNotNull(products);
+        Assert.IsInstanceOf<List<Product>>(products);
+        Assert.Greater(products.Count, 0);
+    }
+}
+Implementing Integration Tests
+Integration tests verify that various parts of the application work together correctly.
+
+ShoppingCartApp.Tests/DatabaseTests.cs
+
+csharp
+Copy code
+using NUnit.Framework;
+using System.Linq;
+
+[TestFixture]
+public class DatabaseTests
+{
+    private ShoppingCartContext _context;
+
+    [SetUp]
+    public void Setup()
+    {
+        _context = new ShoppingCartContext();
+    }
+
+    [Test]
+    public void AddUser_ValidUser_AddedSuccessfully()
+    {
+        // Arrange
+        var user = new User { Username = "newuser", Password = "newpassword" };
+
+        // Act
+        _context.Users.Add(user);
+        _context.SaveChanges();
+
+        // Assert
+        var addedUser = _context.Users.FirstOrDefault(u => u.Username == "newuser");
+        Assert.IsNotNull(addedUser);
+        Assert.AreEqual("newuser", addedUser.Username);
+    }
+
+    [Test]
+    public void AddProduct_ValidProduct_AddedSuccessfully()
+    {
+        // Arrange
+        var product = new Product { ProductName = "New Product", Price = 100.00m, Stock = 10 };
+
+        // Act
+        _context.Products.Add(product);
+        _context.SaveChanges();
+
+        // Assert
+        var addedProduct = _context.Products.FirstOrDefault(p => p.ProductName == "New Product");
+        Assert.IsNotNull(addedProduct);
+        Assert.AreEqual(100.00m, addedProduct.Price);
+    }
+}
+Summary
+This structure and code provide a comprehensive foundation for a shopping cart application in ASP.NET Windows Forms. It includes user registration, login, product management, cart management with discounts, and order checkout functionality. Unit tests and integration tests ensure that the application functions correctly and interacts properly with the database.
+
+Make sure to adjust the namespaces, project references, and other details as per your specific project setup. This example covers the core functionality and testing aspects required for a typical shopping cart application.
+
+for login form
+ChatGPT
+Certainly! Let's complete the implementation for the Login Form in the shopping cart application using ASP.NET Windows Forms. This form will allow users to enter their credentials and attempt to log in.
+
+Login Form Implementation
+Assuming you already have a basic form (LoginForm.cs) created in your project, here is how you can implement the necessary functionality for the Login Form:
+
+Design the Login Form (LoginForm.cs)
+
+Here's a basic structure of the Login Form with relevant controls:
+
+csharp
+Copy code
+partial class LoginForm : Form
+{
+    private AccountController _accountController;
+
+    public LoginForm()
+    {
+        InitializeComponent();
+        _accountController = new AccountController();
+    }
+
+    private void btnLogin_Click(object sender, EventArgs e)
+    {
+        string username = txtUsername.Text.Trim();
+        string password = txtPassword.Text;
+
+        // Call the login method from AccountController
+        var user = _accountController.Login(username, password);
+
+        if (user != null)
+        {
+            // Login successful
+            MessageBox.Show("Login successful!");
+            // Optionally, navigate to the main application or product listing form
+            var productForm = new ProductForm(user.UserID);
+            productForm.Show();
+            this.Hide();
+        }
+        else
+        {
+            // Login failed
+            MessageBox.Show("Invalid username or password. Please try again.");
+        }
+    }
+
+    private void btnRegister_Click(object sender, EventArgs e)
+    {
+        // Open the registration form
+        var registerForm = new RegisterForm();
+        registerForm.Show();
+        this.Hide();
+    }
+}
+Explanation:
+
+txtUsername and txtPassword are TextBox controls where the user enters their username and password, respectively.
+btnLogin_Click event handler validates the user's credentials by calling the Login method from AccountController.
+If login is successful (user object is not null), a success message is shown, and the user is redirected to the ProductForm.
+If login fails (credentials don't match), an error message is displayed.
+AccountController.cs
+
+Ensure your AccountController.cs has methods for handling registration (Register) and login (Login). Here's a simplified version:
+
+csharp
+Copy code
+public class AccountController
+{
+    private readonly ShoppingCartContext _context;
+
+    public AccountController()
+    {
+        _context = new ShoppingCartContext();
+    }
+
+    public bool Register(string username, string password)
+    {
+        // Check if username exists
+        if (_context.Users.Any(u => u.Username == username))
+        {
+            return false; // User already exists
+        }
+
+        var user = new User { Username = username, Password = password };
+        _context.Users.Add(user);
+        _context.SaveChanges();
+        return true; // Registration successful
+    }
+
+    public User Login(string username, string password)
+    {
+        return _context.Users.FirstOrDefault(u => u.Username == username && u.Password == password);
+    }
+}
