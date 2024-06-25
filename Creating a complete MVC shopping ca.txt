@@ -1,0 +1,1099 @@
+Creating a complete MVC shopping cart application with login, signup, add to cart, checkout, and SQL Server integration involves a substantial amount of code. Below is the full implementation for this scenario. Note that for simplicity, some error handling and advanced features are not included.
+
+Database Setup
+Create the SQL Server Database and Tables
+
+Open SQL Server Management Studio (SSMS) and run the following SQL script to set up your database and tables:
+
+sql
+Copy code
+CREATE DATABASE ShoppingCart;
+GO
+
+USE ShoppingCart;
+GO
+
+CREATE TABLE Users (
+    UserID INT PRIMARY KEY IDENTITY(1,1),
+    Username NVARCHAR(50) NOT NULL,
+    Password NVARCHAR(50) NOT NULL
+);
+
+CREATE TABLE Products (
+    ProductID INT PRIMARY KEY IDENTITY(1,1),
+    ProductName NVARCHAR(50) NOT NULL,
+    Price DECIMAL(18, 2) NOT NULL
+);
+
+CREATE TABLE Cart (
+    CartID INT PRIMARY KEY IDENTITY(1,1),
+    UserID INT,
+    ProductID INT,
+    Quantity INT,
+    FOREIGN KEY (UserID) REFERENCES Users(UserID),
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+);
+
+CREATE TABLE Discounts (
+    DiscountID INT PRIMARY KEY IDENTITY(1,1),
+    DiscountCode NVARCHAR(50),
+    DiscountPercentage DECIMAL(5, 2)
+);
+
+-- Insert some example products
+INSERT INTO Products (ProductName, Price) VALUES ('Product 1', 10.00);
+INSERT INTO Products (ProductName, Price) VALUES ('Product 2', 15.50);
+INSERT INTO Products (ProductName, Price) VALUES ('Product 3', 7.75);
+Project Structure
+arduino
+Copy code
+ShoppingCartApp
+├── Controllers
+│   └── CartController.cs
+│   └── ProductController.cs
+│   └── CheckoutController.cs
+│   └── UserController.cs
+├── Models
+│   └── Product.cs
+│   └── Cart.cs
+│   └── Discount.cs
+│   └── User.cs
+├── Data
+│   └── DataAccess.cs
+├── Views
+│   └── MainForm.cs
+│   └── MainForm.Designer.cs
+│   └── CartView.cs
+│   └── CartView.Designer.cs
+│   └── CheckoutView.cs
+│   └── CheckoutView.Designer.cs
+│   └── LoginForm.cs
+│   └── LoginForm.Designer.cs
+│   └── SignupForm.cs
+│   └── SignupForm.Designer.cs
+├── Program.cs
+└── App.config
+Data Models
+Models/Product.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Models
+{
+    public class Product
+    {
+        public int ProductID { get; set; }
+        public string ProductName { get; set; }
+        public decimal Price { get; set; }
+    }
+}
+Models/Cart.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Models
+{
+    public class Cart
+    {
+        public int CartID { get; set; }
+        public int UserID { get; set; }
+        public int ProductID { get; set; }
+        public int Quantity { get; set; }
+    }
+}
+Models/Discount.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Models
+{
+    public class Discount
+    {
+        public int DiscountID { get; set; }
+        public string DiscountCode { get; set; }
+        public decimal DiscountPercentage { get; set; }
+    }
+}
+Models/User.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Models
+{
+    public class User
+    {
+        public int UserID { get; set; }
+        public string Username { get; set; }
+        public string Password { get; set; }
+    }
+}
+Data Access Layer
+Data/DataAccess.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using ShoppingCartApp.Models;
+using System.Configuration;
+
+namespace ShoppingCartApp.Data
+{
+    public class DataAccess
+    {
+        private string connectionString = ConfigurationManager.ConnectionStrings["ShoppingCartDB"].ConnectionString;
+
+        public List<Product> GetProducts()
+        {
+            List<Product> products = new List<Product>();
+
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                SqlCommand cmd = new SqlCommand("SELECT * FROM Products", conn);
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                while (reader.Read())
+                {
+                    products.Add(new Product
+                    {
+                        ProductID = Convert.ToInt32(reader["ProductID"]),
+                        ProductName = reader["ProductName"].ToString(),
+                        Price = Convert.ToDecimal(reader["Price"])
+                    });
+                }
+            }
+
+            return products;
+        }
+
+        public void AddToCart(int userId, int productId, int quantity)
+        {
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                SqlCommand cmd = new SqlCommand("INSERT INTO Cart (UserID, ProductID, Quantity) VALUES (@UserID, @ProductID, @Quantity)", conn);
+                cmd.Parameters.AddWithValue("@UserID", userId);
+                cmd.Parameters.AddWithValue("@ProductID", productId);
+                cmd.Parameters.AddWithValue("@Quantity", quantity);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public List<Cart> GetCartItems(int userId)
+        {
+            List<Cart> cartItems = new List<Cart>();
+
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                SqlCommand cmd = new SqlCommand("SELECT * FROM Cart WHERE UserID = @UserID", conn);
+                cmd.Parameters.AddWithValue("@UserID", userId);
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                while (reader.Read())
+                {
+                    cartItems.Add(new Cart
+                    {
+                        CartID = Convert.ToInt32(reader["CartID"]),
+                        UserID = Convert.ToInt32(reader["UserID"]),
+                        ProductID = Convert.ToInt32(reader["ProductID"]),
+                        Quantity = Convert.ToInt32(reader["Quantity"])
+                    });
+                }
+            }
+
+            return cartItems;
+        }
+
+        public Discount GetDiscountByCode(string code)
+        {
+            Discount discount = null;
+
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                SqlCommand cmd = new SqlCommand("SELECT * FROM Discounts WHERE DiscountCode = @DiscountCode", conn);
+                cmd.Parameters.AddWithValue("@DiscountCode", code);
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    discount = new Discount
+                    {
+                        DiscountID = Convert.ToInt32(reader["DiscountID"]),
+                        DiscountCode = reader["DiscountCode"].ToString(),
+                        DiscountPercentage = Convert.ToDecimal(reader["DiscountPercentage"])
+                    };
+                }
+            }
+
+            return discount;
+        }
+
+        public bool CreateUser(string username, string password)
+        {
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                SqlCommand cmd = new SqlCommand("INSERT INTO Users (Username, Password) VALUES (@Username, @Password)", conn);
+                cmd.Parameters.AddWithValue("@Username", username);
+                cmd.Parameters.AddWithValue("@Password", password);
+                int result = cmd.ExecuteNonQuery();
+                return result > 0;
+            }
+        }
+
+        public User GetUser(string username, string password)
+        {
+            User user = null;
+
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                SqlCommand cmd = new SqlCommand("SELECT * FROM Users WHERE Username = @Username AND Password = @Password", conn);
+                cmd.Parameters.AddWithValue("@Username", username);
+                cmd.Parameters.AddWithValue("@Password", password);
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    user = new User
+                    {
+                        UserID = Convert.ToInt32(reader["UserID"]),
+                        Username = reader["Username"].ToString(),
+                        Password = reader["Password"].ToString()
+                    };
+                }
+            }
+
+            return user;
+        }
+    }
+}
+Controllers
+Controllers/ProductController.cs
+
+csharp
+Copy code
+using System.Collections.Generic;
+using ShoppingCartApp.Models;
+using ShoppingCartApp.Data;
+
+namespace ShoppingCartApp.Controllers
+{
+    public class ProductController
+    {
+        private DataAccess dataAccess = new DataAccess();
+
+        public List<Product> GetProducts()
+        {
+            return dataAccess.GetProducts();
+        }
+    }
+}
+Controllers/CartController.cs
+
+csharp
+Copy code
+using System.Collections.Generic;
+using ShoppingCartApp.Models;
+using ShoppingCartApp.Data;
+
+namespace ShoppingCartApp.Controllers
+{
+    public class CartController
+    {
+        private DataAccess dataAccess = new DataAccess();
+
+        public void AddToCart(int userId, int productId, int quantity)
+        {
+            dataAccess.AddToCart(userId, productId, quantity);
+        }
+
+        public List<Cart> GetCartItems(int userId)
+        {
+            return dataAccess.GetCartItems(userId);
+        }
+    }
+}
+Controllers/CheckoutController.cs
+
+csharp
+Copy code
+using ShoppingCartApp.Models;
+using ShoppingCartApp.Data;
+
+namespace ShoppingCartApp.Controllers
+{
+    public class CheckoutController
+    {
+        private DataAccess dataAccess = new DataAccess();
+
+        public decimal ApplyDiscount(string code, decimal totalAmount)
+        {
+            Discount discount = dataAccess.GetDiscountByCode(code);
+
+            if (discount != null)
+            {
+                return totalAmount - (totalAmount * (discount.DiscountPercentage / 100));
+            }
+
+            return totalAmount;
+        }
+    }
+}
+Controllers/UserController.cs
+
+csharp
+Copy code
+using ShoppingCartApp.Models;
+using ShoppingCartApp.Data;
+
+namespace ShoppingCartApp.Controllers
+{
+    public class UserController
+    {
+        private DataAccess dataAccess = new DataAccess();
+
+        public bool CreateUser(string username, string password)
+        {
+            return dataAccess.CreateUser(username, password);
+        }
+
+        public User GetUser(string username, string password)
+        {
+            return dataAccess.GetUser(username, password);
+        }
+    }
+}
+Views
+Views/LoginForm.cs
+
+csharp
+Copy code
+using System;
+using System.Windows.Forms;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Models;
+
+namespace ShoppingCartApp.Views
+{
+    public partial class LoginForm : Form
+    {
+        private UserController userController = new UserController();
+
+        public LoginForm()
+        {
+            InitializeComponent();
+        }
+
+        private void buttonLogin_Click(object sender, EventArgs e)
+        {
+            string username = textBoxUsername.Text;
+            string password = textBoxPassword.Text;
+
+            User user = userController.GetUser(username, password);
+
+            if (user != null)
+            {
+                MainForm mainForm = new MainForm(user);
+                mainForm.Show();
+                this.Hide();
+            }
+            else
+            {
+                MessageBox.Show("Invalid username or password.");
+            }
+        }
+
+        private void buttonSignup_Click(object sender, EventArgs e)
+        {
+            SignupForm signupForm = new SignupForm();
+            signupForm.Show();
+            this.Hide();
+        }
+    }
+}
+Views/LoginForm.Designer.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Views
+{
+    partial class LoginForm
+    {
+        private System.ComponentModel.IContainer components = null;
+        private System.Windows.Forms.TextBox textBoxUsername;
+        private System.Windows.Forms.TextBox textBoxPassword;
+        private System.Windows.Forms.Button buttonLogin;
+        private System.Windows.Forms.Button buttonSignup;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void InitializeComponent()
+        {
+            this.textBoxUsername = new System.Windows.Forms.TextBox();
+            this.textBoxPassword = new System.Windows.Forms.TextBox();
+            this.buttonLogin = new System.Windows.Forms.Button();
+            this.buttonSignup = new System.Windows.Forms.Button();
+            this.SuspendLayout();
+            // 
+            // textBoxUsername
+            // 
+            this.textBoxUsername.Location = new System.Drawing.Point(12, 12);
+            this.textBoxUsername.Name = "textBoxUsername";
+            this.textBoxUsername.Size = new System.Drawing.Size(260, 22);
+            this.textBoxUsername.TabIndex = 0;
+            // 
+            // textBoxPassword
+            // 
+            this.textBoxPassword.Location = new System.Drawing.Point(12, 40);
+            this.textBoxPassword.Name = "textBoxPassword";
+            this.textBoxPassword.PasswordChar = '*';
+            this.textBoxPassword.Size = new System.Drawing.Size(260, 22);
+            this.textBoxPassword.TabIndex = 1;
+            // 
+            // buttonLogin
+            // 
+            this.buttonLogin.Location = new System.Drawing.Point(12, 68);
+            this.buttonLogin.Name = "buttonLogin";
+            this.buttonLogin.Size = new System.Drawing.Size(75, 23);
+            this.buttonLogin.TabIndex = 2;
+            this.buttonLogin.Text = "Login";
+            this.buttonLogin.UseVisualStyleBackColor = true;
+            this.buttonLogin.Click += new System.EventHandler(this.buttonLogin_Click);
+            // 
+            // buttonSignup
+            // 
+            this.buttonSignup.Location = new System.Drawing.Point(197, 68);
+            this.buttonSignup.Name = "buttonSignup";
+            this.buttonSignup.Size = new System.Drawing.Size(75, 23);
+            this.buttonSignup.TabIndex = 3;
+            this.buttonSignup.Text = "Signup";
+            this.buttonSignup.UseVisualStyleBackColor = true;
+            this.buttonSignup.Click += new System.EventHandler(this.buttonSignup_Click);
+            // 
+            // LoginForm
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(284, 101);
+            this.Controls.Add(this.buttonSignup);
+            this.Controls.Add(this.buttonLogin);
+            this.Controls.Add(this.textBoxPassword);
+            this.Controls.Add(this.textBoxUsername);
+            this.Name = "LoginForm";
+            this.Text = "Login";
+            this.ResumeLayout(false);
+            this.PerformLayout();
+        }
+    }
+}
+Views/SignupForm.cs
+
+csharp
+Copy code
+using System;
+using System.Windows.Forms;
+using ShoppingCartApp.Controllers;
+
+namespace ShoppingCartApp.Views
+{
+    public partial class SignupForm : Form
+    {
+        private UserController userController = new UserController();
+
+        public SignupForm()
+        {
+            InitializeComponent();
+        }
+
+        private void buttonSignup_Click(object sender, EventArgs e)
+        {
+            string username = textBoxUsername.Text;
+            string password = textBoxPassword.Text;
+
+            bool success = userController.CreateUser(username, password);
+
+            if (success)
+            {
+                MessageBox.Show("User created successfully.");
+                LoginForm loginForm = new LoginForm();
+                loginForm.Show();
+                this.Hide();
+            }
+            else
+            {
+                MessageBox.Show("Error creating user.");
+            }
+        }
+
+        private void buttonBack_Click(object sender, EventArgs e)
+        {
+            LoginForm loginForm = new LoginForm();
+            loginForm.Show();
+            this.Hide();
+        }
+    }
+}
+Views/SignupForm.Designer.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Views
+{
+    partial class SignupForm
+    {
+        private System.ComponentModel.IContainer components = null;
+        private System.Windows.Forms.TextBox textBoxUsername;
+        private System.Windows.Forms.TextBox textBoxPassword;
+        private System.Windows.Forms.Button buttonSignup;
+        private System.Windows.Forms.Button buttonBack;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void InitializeComponent()
+        {
+            this.textBoxUsername = new System.Windows.Forms.TextBox();
+            this.textBoxPassword = new System.Windows.Forms.TextBox();
+            this.buttonSignup = new System.Windows.Forms.Button();
+            this.buttonBack = new System.Windows.Forms.Button();
+            this.SuspendLayout();
+            // 
+            // textBoxUsername
+            // 
+            this.textBoxUsername.Location = new System.Drawing.Point(12, 12);
+            this.textBoxUsername.Name = "textBoxUsername";
+            this.textBoxUsername.Size = new System.Drawing.Size(260, 22);
+            this.textBoxUsername.TabIndex = 0;
+            // 
+            // textBoxPassword
+            // 
+            this.textBoxPassword.Location = new System.Drawing.Point(12, 40);
+            this.textBoxPassword.Name = "textBoxPassword";
+            this.textBoxPassword.PasswordChar = '*';
+            this.textBoxPassword.Size = new System.Drawing.Size(260, 22);
+            this.textBoxPassword.TabIndex = 1;
+            // 
+            // buttonSignup
+            // 
+            this.buttonSignup.Location = new System.Drawing.Point(12, 68);
+            this.buttonSignup.Name = "buttonSignup";
+            this.buttonSignup.Size = new System.Drawing.Size(75, 23);
+            this.buttonSignup.TabIndex = 2;
+            this.buttonSignup.Text = "Signup";
+            this.buttonSignup.UseVisualStyleBackColor = true;
+            this.buttonSignup.Click += new System.EventHandler(this.buttonSignup_Click);
+            // 
+            // buttonBack
+            // 
+            this.buttonBack.Location = new System.Drawing.Point(197, 68);
+            this.buttonBack.Name = "buttonBack";
+            this.buttonBack.Size = new System.Drawing.Size(75, 23);
+            this.buttonBack.TabIndex = 3;
+            this.buttonBack.Text = "Back";
+            this.buttonBack.UseVisualStyleBackColor = true;
+            this.buttonBack.Click += new System.EventHandler(this.buttonBack_Click);
+            // 
+            // SignupForm
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(284, 101);
+            this.Controls.Add(this.buttonBack);
+            this.Controls.Add(this.buttonSignup);
+            this.Controls.Add(this.textBoxPassword);
+            this.Controls.Add(this.textBoxUsername);
+            this.Name = "SignupForm";
+            this.Text = "Signup";
+            this.ResumeLayout(false);
+            this.PerformLayout();
+        }
+    }
+}
+Views/MainForm.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Windows.Forms;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Models;
+
+namespace ShoppingCartApp.Views
+{
+    public partial class MainForm : Form
+    {
+        private ProductController productController = new ProductController();
+        private CartController cartController = new CartController();
+        private User user;
+
+        public MainForm(User loggedInUser)
+        {
+            InitializeComponent();
+            user = loggedInUser;
+            LoadProducts();
+        }
+
+        private void LoadProducts()
+        {
+            List<Product> products = productController.GetProducts();
+            listBoxProducts.DataSource = products;
+            listBoxProducts.DisplayMember = "ProductName";
+            listBoxProducts.ValueMember = "ProductID";
+        }
+
+        private void buttonAddToCart_Click(object sender, EventArgs e)
+        {
+            if (listBoxProducts.SelectedItem != null)
+            {
+                Product selectedProduct = (Product)listBoxProducts.SelectedItem;
+                cartController.AddToCart(user.UserID, selectedProduct.ProductID, 1);
+                MessageBox.Show("Product added to cart.");
+            }
+        }
+
+        private void buttonViewCart_Click(object sender, EventArgs e)
+        {
+            CartView cartView = new CartView(user);
+            cartView.Show();
+            this.Hide();
+        }
+
+        private void buttonCheckout_Click(object sender, EventArgs e)
+        {
+            CheckoutView checkoutView = new CheckoutView(user);
+            checkoutView.Show();
+            this.Hide();
+        }
+    }
+}
+Views/MainForm.Designer.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Views
+{
+    partial class MainForm
+    {
+        private System.ComponentModel.IContainer components = null;
+        private System.Windows.Forms.ListBox listBoxProducts;
+        private System.Windows.Forms.Button buttonAddToCart;
+        private System.Windows.Forms.Button buttonViewCart;
+        private System.Windows.Forms.Button buttonCheckout;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void InitializeComponent()
+        {
+            this.listBoxProducts = new System.Windows.Forms.ListBox();
+            this.buttonAddToCart = new System.Windows.Forms.Button();
+            this.buttonViewCart = new System.Windows.Forms.Button();
+            this.buttonCheckout = new System.Windows.Forms.Button();
+            this.SuspendLayout();
+            // 
+            // listBoxProducts
+            // 
+            this.listBoxProducts.FormattingEnabled = true;
+            this.listBoxProducts.ItemHeight = 16;
+            this.listBoxProducts.Location = new System.Drawing.Point(12, 12);
+            this.listBoxProducts.Name = "listBoxProducts";
+            this.listBoxProducts.Size = new System.Drawing.Size(360, 212);
+            this.listBoxProducts.TabIndex = 0;
+            // 
+            // buttonAddToCart
+            // 
+            this.buttonAddToCart.Location = new System.Drawing.Point(12, 230);
+            this.buttonAddToCart.Name = "buttonAddToCart";
+            this.buttonAddToCart.Size = new System.Drawing.Size(75, 23);
+            this.buttonAddToCart.TabIndex = 1;
+            this.buttonAddToCart.Text = "Add to Cart";
+            this.buttonAddToCart.UseVisualStyleBackColor = true;
+            this.buttonAddToCart.Click += new System.EventHandler(this.buttonAddToCart_Click);
+            // 
+            // buttonViewCart
+            // 
+            this.buttonViewCart.Location = new System.Drawing.Point(150, 230);
+            this.buttonViewCart.Name = "buttonViewCart";
+            this.buttonViewCart.Size = new System.Drawing.Size(75, 23);
+            this.buttonViewCart.TabIndex = 2;
+            this.buttonViewCart.Text = "View Cart";
+            this.buttonViewCart.UseVisualStyleBackColor = true;
+            this.buttonViewCart.Click += new System.EventHandler(this.buttonViewCart_Click);
+            // 
+            // buttonCheckout
+            // 
+            this.buttonCheckout.Location = new System.Drawing.Point(297, 230);
+            this.buttonCheckout.Name = "buttonCheckout";
+            this.buttonCheckout.Size = new System.Drawing.Size(75, 23);
+            this.buttonCheckout.TabIndex = 3;
+            this.buttonCheckout.Text = "Checkout";
+            this.buttonCheckout.UseVisualStyleBackColor = true;
+            this.buttonCheckout.Click += new System.EventHandler(this.buttonCheckout_Click);
+            // 
+            // MainForm
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(384, 261);
+            this.Controls.Add(this.buttonCheckout);
+            this.Controls.Add(this.buttonViewCart);
+            this.Controls.Add(this.buttonAddToCart);
+            this.Controls.Add(this.listBoxProducts);
+            this.Name = "MainForm";
+            this.Text = "Shopping Cart";
+            this.ResumeLayout(false);
+        }
+    }
+}
+Views/CartView.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Windows.Forms;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Models;
+
+namespace ShoppingCartApp.Views
+{
+    public partial class CartView : Form
+    {
+        private CartController cartController = new CartController();
+        private User user;
+
+        public CartView(User loggedInUser)
+        {
+            InitializeComponent();
+            user = loggedInUser;
+            LoadCartItems();
+        }
+
+        private void LoadCartItems()
+        {
+            List<Cart> cartItems = cartController.GetCartItems(user.UserID);
+            listBoxCartItems.DataSource = cartItems;
+            listBoxCartItems.DisplayMember = "ProductID";
+            listBoxCartItems.ValueMember = "CartID";
+        }
+
+        private void buttonCheckout_Click(object sender, EventArgs e)
+        {
+            CheckoutView checkoutView = new CheckoutView(user);
+            checkoutView.Show();
+            this.Hide();
+        }
+    }
+}
+Views/CartView.Designer.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Views
+{
+    partial class CartView
+    {
+        private System.ComponentModel.IContainer components = null;
+        private System.Windows.Forms.ListBox listBoxCartItems;
+        private System.Windows.Forms.Button buttonCheckout;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void InitializeComponent()
+        {
+            this.listBoxCartItems = new System.Windows.Forms.ListBox();
+            this.buttonCheckout = new System.Windows.Forms.Button();
+            this.SuspendLayout();
+            // 
+            // listBoxCartItems
+            // 
+            this.listBoxCartItems.FormattingEnabled = true;
+            this.listBoxCartItems.ItemHeight = 16;
+            this.listBoxCartItems.Location = new System.Drawing.Point(12, 12);
+            this.listBoxCartItems.Name = "listBoxCartItems";
+            this.listBoxCartItems.Size = new System.Drawing.Size(360, 212);
+            this.listBoxCartItems.TabIndex = 0;
+            // 
+            // buttonCheckout
+            // 
+            this.buttonCheckout.Location = new System.Drawing.Point(297, 230);
+            this.buttonCheckout.Name = "buttonCheckout";
+            this.buttonCheckout.Size = new System.Drawing.Size(75, 23);
+            this.buttonCheckout.TabIndex = 1;
+            this.buttonCheckout.Text = "Checkout";
+            this.buttonCheckout.UseVisualStyleBackColor = true;
+            this.buttonCheckout.Click += new System.EventHandler(this.buttonCheckout_Click);
+            // 
+            // CartView
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(384, 261);
+            this.Controls.Add(this.buttonCheckout);
+            this.Controls.Add(this.listBoxCartItems);
+            this.Name = "CartView";
+            this.Text = "Cart";
+            this.ResumeLayout(false);
+        }
+    }
+}
+Views/CheckoutView.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Windows.Forms;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Models;
+
+namespace ShoppingCartApp.Views
+{
+    public partial class CheckoutView : Form
+    {
+        private CartController cartController = new CartController();
+        private CheckoutController checkoutController = new CheckoutController();
+        private User user;
+
+        public CheckoutView(User loggedInUser)
+        {
+            InitializeComponent();
+            user = loggedInUser;
+            LoadCartItems();
+        }
+
+        private void LoadCartItems()
+        {
+            List<Cart> cartItems = cartController.GetCartItems(user.UserID);
+            decimal totalAmount = 0;
+
+            foreach (Cart item in cartItems)
+            {
+                // Assuming you have a method to get product by ID
+                Product product = new ProductController().GetProducts().Find(p => p.ProductID == item.ProductID);
+                totalAmount += product.Price * item.Quantity;
+            }
+
+            textBoxTotalAmount.Text = totalAmount.ToString("0.00");
+        }
+
+        private void buttonApplyDiscount_Click(object sender, EventArgs e)
+        {
+            string discountCode = textBoxDiscountCode.Text;
+            decimal totalAmount = Convert.ToDecimal(textBoxTotalAmount.Text);
+            decimal newTotal = checkoutController.ApplyDiscount(discountCode, totalAmount);
+            textBoxTotalAmount.Text = newTotal.ToString("0.00");
+        }
+
+        private void buttonCompleteOrder_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show("Order completed successfully.");
+            MainForm mainForm = new MainForm(user);
+            mainForm.Show();
+            this.Hide();
+        }
+    }
+}
+Views/CheckoutView.Designer.cs
+
+csharp
+Copy code
+namespace ShoppingCartApp.Views
+{
+    partial class CheckoutView
+    {
+        private System.ComponentModel.IContainer components = null;
+        private System.Windows.Forms.TextBox textBoxTotalAmount;
+        private System.Windows.Forms.TextBox textBoxDiscountCode;
+        private System.Windows.Forms.Button buttonApplyDiscount;
+        private System.Windows.Forms.Button buttonCompleteOrder;
+        private System.Windows.Forms.Label labelTotalAmount;
+        private System.Windows.Forms.Label labelDiscountCode;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && (components != null))
+            {
+                components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void InitializeComponent()
+        {
+            this.textBoxTotalAmount = new System.Windows.Forms.TextBox();
+            this.textBoxDiscountCode = new System.Windows.Forms.TextBox();
+            this.buttonApplyDiscount = new System.Windows.Forms.Button();
+            this.buttonCompleteOrder = new System.Windows.Forms.Button();
+            this.labelTotalAmount = new System.Windows.Forms.Label();
+            this.labelDiscountCode = new System.Windows.Forms.Label();
+            this.SuspendLayout();
+            // 
+            // textBoxTotalAmount
+            // 
+            this.textBoxTotalAmount.Location = new System.Drawing.Point(150
+continue 
+ChatGPT
+csharp
+Copy code
+, 12);
+            this.textBoxTotalAmount.Name = "textBoxTotalAmount";
+            this.textBoxTotalAmount.ReadOnly = true;
+            this.textBoxTotalAmount.Size = new System.Drawing.Size(150, 22);
+            this.textBoxTotalAmount.TabIndex = 0;
+            // 
+            // textBoxDiscountCode
+            // 
+            this.textBoxDiscountCode.Location = new System.Drawing.Point(150, 40);
+            this.textBoxDiscountCode.Name = "textBoxDiscountCode";
+            this.textBoxDiscountCode.Size = new System.Drawing.Size(150, 22);
+            this.textBoxDiscountCode.TabIndex = 1;
+            // 
+            // buttonApplyDiscount
+            // 
+            this.buttonApplyDiscount.Location = new System.Drawing.Point(12, 68);
+            this.buttonApplyDiscount.Name = "buttonApplyDiscount";
+            this.buttonApplyDiscount.Size = new System.Drawing.Size(150, 23);
+            this.buttonApplyDiscount.TabIndex = 2;
+            this.buttonApplyDiscount.Text = "Apply Discount";
+            this.buttonApplyDiscount.UseVisualStyleBackColor = true;
+            this.buttonApplyDiscount.Click += new System.EventHandler(this.buttonApplyDiscount_Click);
+            // 
+            // buttonCompleteOrder
+            // 
+            this.buttonCompleteOrder.Location = new System.Drawing.Point(150, 68);
+            this.buttonCompleteOrder.Name = "buttonCompleteOrder";
+            this.buttonCompleteOrder.Size = new System.Drawing.Size(150, 23);
+            this.buttonCompleteOrder.TabIndex = 3;
+            this.buttonCompleteOrder.Text = "Complete Order";
+            this.buttonCompleteOrder.UseVisualStyleBackColor = true;
+            this.buttonCompleteOrder.Click += new System.EventHandler(this.buttonCompleteOrder_Click);
+            // 
+            // labelTotalAmount
+            // 
+            this.labelTotalAmount.AutoSize = true;
+            this.labelTotalAmount.Location = new System.Drawing.Point(12, 15);
+            this.labelTotalAmount.Name = "labelTotalAmount";
+            this.labelTotalAmount.Size = new System.Drawing.Size(92, 17);
+            this.labelTotalAmount.TabIndex = 4;
+            this.labelTotalAmount.Text = "Total Amount";
+            // 
+            // labelDiscountCode
+            // 
+            this.labelDiscountCode.AutoSize = true;
+            this.labelDiscountCode.Location = new System.Drawing.Point(12, 43);
+            this.labelDiscountCode.Name = "labelDiscountCode";
+            this.labelDiscountCode.Size = new System.Drawing.Size(101, 17);
+            this.labelDiscountCode.TabIndex = 5;
+            this.labelDiscountCode.Text = "Discount Code";
+            // 
+            // CheckoutView
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(312, 106);
+            this.Controls.Add(this.labelDiscountCode);
+            this.Controls.Add(this.labelTotalAmount);
+            this.Controls.Add(this.buttonCompleteOrder);
+            this.Controls.Add(this.buttonApplyDiscount);
+            this.Controls.Add(this.textBoxDiscountCode);
+            this.Controls.Add(this.textBoxTotalAmount);
+            this.Name = "CheckoutView";
+            this.Text = "Checkout";
+            this.ResumeLayout(false);
+            this.PerformLayout();
+        }
+    }
+}
+Program.cs
+csharp
+Copy code
+using System;
+using System.Windows.Forms;
+using ShoppingCartApp.Views;
+
+namespace ShoppingCartApp
+{
+    static class Program
+    {
+        /// <summary>
+        /// The main entry point for the application.
+        /// </summary>
+        [STAThread]
+        static void Main()
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new LoginForm());
+        }
+    }
+}
+App.config
+Make sure to add the App.config file to your project and configure the connection string to your SQL Server database:
+
+xml
+Copy code
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+    <connectionStrings>
+        <add name="ShoppingCartDB"
+             connectionString="Data Source=YourServerName;Initial Catalog=ShoppingCart;Integrated Security=True;"
+             providerName="System.Data.SqlClient" />
+    </connectionStrings>
+</configuration>
+Explanation
+Database: This setup assumes you've created a SQL Server database named ShoppingCart with tables for Users, Products, Cart, and Discounts. Example products have been inserted into the Products table.
+
+Models: Represent the entities used in the application, such as Product, Cart, Discount, and User.
+
+Data Access Layer (DataAccess.cs): Manages interactions with the SQL Server database, including methods to retrieve products, add items to the cart, get cart items, apply discounts, create users, and authenticate users.
+
+Controllers: Implement business logic for managing products (ProductController), cart operations (CartController), checkout operations (CheckoutController), and user operations (UserController).
+
+Views: Windows Forms used for the user interface, including LoginForm, SignupForm, MainForm, CartView, and CheckoutView. These forms interact with the controllers to handle user actions and display data.
+
+Program.cs: Main entry point of the application. It starts with the LoginForm and initializes the Windows Forms application.
+
+App.config: Contains the connection string to your SQL Server database.
+
+Notes
+Security: This example uses a basic approach to user authentication (Username and Password stored directly in the database). In a real application, passwords should be hashed for security.
+
+Error Handling: Exception handling and input validation should be implemented in a production application to ensure robustness and security.
+
+UI Design: The UI design is kept minimal for brevity. You can enhance it with additional features and better layout according to your requirements.
+
+This implementation provides a basic framework for a shopping cart application in Windows Forms using the MVC pattern with SQL Server integration. Adjustments and additional features can be made based on specific project requirements and best practices.
