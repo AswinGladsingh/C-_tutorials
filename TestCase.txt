@@ -1,0 +1,245 @@
+Install-Package NUnit
+Install-Package Moq
+Install-Package NUnit3TestAdapter
+Setup the Test Project:
+Create a separate project for your tests. Let's call it ShoppingCartApp.Tests. Add references to your main project and the necessary packages.
+
+Write the Unit Tests:
+
+UserController Tests
+UserControllerTests.cs
+csharp
+Copy code
+using NUnit.Framework;
+using Moq;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Data;
+using ShoppingCartApp.Models;
+using System.Collections.Generic;
+
+namespace ShoppingCartApp.Tests.Controllers
+{
+    [TestFixture]
+    public class UserControllerTests
+    {
+        private Mock<IDataAccess> _dataAccessMock;
+        private UserController _userController;
+
+        [SetUp]
+        public void Setup()
+        {
+            _dataAccessMock = new Mock<IDataAccess>();
+            _userController = new UserController(_dataAccessMock.Object);
+        }
+
+        [Test]
+        public void CreateUser_ShouldReturnTrue_WhenUserIsCreated()
+        {
+            _dataAccessMock.Setup(x => x.CreateUser(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+
+            var result = _userController.CreateUser("testuser", "password");
+
+            Assert.IsTrue(result);
+            _dataAccessMock.Verify(x => x.CreateUser(It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+        }
+
+        [Test]
+        public void CreateUser_ShouldReturnFalse_WhenUserCreationFails()
+        {
+            _dataAccessMock.Setup(x => x.CreateUser(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
+
+            var result = _userController.CreateUser("testuser", "password");
+
+            Assert.IsFalse(result);
+            _dataAccessMock.Verify(x => x.CreateUser(It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+        }
+
+        [Test]
+        public void GetUser_ShouldReturnUser_WhenUserExists()
+        {
+            var user = new User { UserID = 1, Username = "testuser", Password = "password" };
+            _dataAccessMock.Setup(x => x.GetUser(It.IsAny<string>(), It.IsAny<string>())).Returns(user);
+
+            var result = _userController.GetUser("testuser", "password");
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(user.Username, result.Username);
+        }
+
+        [Test]
+        public void GetUser_ShouldReturnNull_WhenUserDoesNotExist()
+        {
+            _dataAccessMock.Setup(x => x.GetUser(It.IsAny<string>(), It.IsAny<string>())).Returns((User)null);
+
+            var result = _userController.GetUser("testuser", "password");
+
+            Assert.IsNull(result);
+        }
+    }
+}
+ProductController Tests
+ProductControllerTests.cs
+csharp
+Copy code
+using NUnit.Framework;
+using Moq;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Data;
+using ShoppingCartApp.Models;
+using System.Collections.Generic;
+
+namespace ShoppingCartApp.Tests.Controllers
+{
+    [TestFixture]
+    public class ProductControllerTests
+    {
+        private Mock<IDataAccess> _dataAccessMock;
+        private ProductController _productController;
+
+        [SetUp]
+        public void Setup()
+        {
+            _dataAccessMock = new Mock<IDataAccess>();
+            _productController = new ProductController(_dataAccessMock.Object);
+        }
+
+        [Test]
+        public void GetProducts_ShouldReturnProductList()
+        {
+            var products = new List<Product>
+            {
+                new Product { ProductID = 1, ProductName = "Product 1", Price = 10.0m },
+                new Product { ProductID = 2, ProductName = "Product 2", Price = 20.0m }
+            };
+
+            _dataAccessMock.Setup(x => x.GetProducts()).Returns(products);
+
+            var result = _productController.GetProducts();
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(2, result.Count);
+        }
+
+        [Test]
+        public void AddProduct_ShouldCallDataAccessMethod()
+        {
+            var product = new Product { ProductID = 1, ProductName = "Product 1", Price = 10.0m };
+            
+            _productController.AddProduct(product);
+
+            _dataAccessMock.Verify(x => x.AddProduct(It.IsAny<Product>()), Times.Once);
+        }
+    }
+}
+CartController Tests
+CartControllerTests.cs
+csharp
+Copy code
+using NUnit.Framework;
+using Moq;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Data;
+using ShoppingCartApp.Models;
+using System.Collections.Generic;
+
+namespace ShoppingCartApp.Tests.Controllers
+{
+    [TestFixture]
+    public class CartControllerTests
+    {
+        private Mock<IDataAccess> _dataAccessMock;
+        private CartController _cartController;
+
+        [SetUp]
+        public void Setup()
+        {
+            _dataAccessMock = new Mock<IDataAccess>();
+            _cartController = new CartController(_dataAccessMock.Object);
+        }
+
+        [Test]
+        public void AddToCart_ShouldCallDataAccessMethod()
+        {
+            _cartController.AddToCart(1, 1, 1);
+
+            _dataAccessMock.Verify(x => x.AddToCart(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()), Times.Once);
+        }
+
+        [Test]
+        public void GetCartItems_ShouldReturnCartItems()
+        {
+            var cartItems = new List<Cart>
+            {
+                new Cart { CartID = 1, UserID = 1, ProductID = 1, Quantity = 1 },
+                new Cart { CartID = 2, UserID = 1, ProductID = 2, Quantity = 2 }
+            };
+
+            _dataAccessMock.Setup(x => x.GetCartItems(It.IsAny<int>())).Returns(cartItems);
+
+            var result = _cartController.GetCartItems(1);
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(2, result.Count);
+        }
+
+        [Test]
+        public void RemoveFromCart_ShouldCallDataAccessMethod()
+        {
+            _cartController.RemoveFromCart(1);
+
+            _dataAccessMock.Verify(x => x.RemoveFromCart(It.IsAny<int>()), Times.Once);
+        }
+    }
+}
+DiscountController Tests
+DiscountControllerTests.cs
+csharp
+Copy code
+using NUnit.Framework;
+using Moq;
+using ShoppingCartApp.Controllers;
+using ShoppingCartApp.Data;
+using ShoppingCartApp.Models;
+
+namespace ShoppingCartApp.Tests.Controllers
+{
+    [TestFixture]
+    public class DiscountControllerTests
+    {
+        private Mock<IDataAccess> _dataAccessMock;
+        private DiscountController _discountController;
+
+        [SetUp]
+        public void Setup()
+        {
+            _dataAccessMock = new Mock<IDataAccess>();
+            _discountController = new DiscountController(_dataAccessMock.Object);
+        }
+
+        [Test]
+        public void GetDiscountByCode_ShouldReturnDiscount()
+        {
+            var discount = new Discount { DiscountID = 1, DiscountCode = "DISCOUNT10", DiscountPercentage = 10.0m };
+            _dataAccessMock.Setup(x => x.GetDiscountByCode(It.IsAny<string>())).Returns(discount);
+
+            var result = _discountController.GetDiscountByCode("DISCOUNT10");
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(10.0m, result.DiscountPercentage);
+        }
+
+        [Test]
+        public void GetDiscountByCode_ShouldReturnNull_WhenDiscountDoesNotExist()
+        {
+            _dataAccessMock.Setup(x => x.GetDiscountByCode(It.IsAny<string>())).Returns((Discount)null);
+
+            var result = _discountController.GetDiscountByCode("INVALID");
+
+            Assert.IsNull(result);
+        }
+    }
+}
+Final Notes
+These tests use Moq to mock the data access layer. You need to ensure that the methods in the data access layer interface match those being called in the controllers.
+The tests include basic functionality checks. You can add more specific tests based on your application's requirements.
+Make sure to run the tests using a test runner compatible with NUnit, such as the built-in test explorer in Visual Studio.
