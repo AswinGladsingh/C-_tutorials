@@ -1,0 +1,145 @@
+using NUnit.Framework;
+using ShoppingCartApp.Data;
+using ShoppingCartApp.Models;
+using System.Configuration;
+
+namespace ShoppingCartApp.Tests
+{
+    [TestFixture]
+    public class DataAccessTest
+    {
+        private string connectionString;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Initialize or retrieve your connection string from configuration
+            connectionString = ConfigurationManager.ConnectionStrings["ShoppingCartDB"].ConnectionString;
+        }
+
+        [Test]
+        public void GetProducts_ShouldReturnProducts()
+        {
+            // Arrange
+            DataAccess dataAccess = new DataAccess(connectionString);
+
+            // Act
+            var products = dataAccess.GetProducts();
+
+            // Assert
+            Assert.IsNotNull(products);
+            Assert.Greater(products.Count, 0);
+        }
+
+        [Test]
+        public void CreateUser_ShouldReturnTrueOnSuccess()
+        {
+            // Arrange
+            DataAccess dataAccess = new DataAccess(connectionString);
+            string username = "testuser";
+            string password = "testpassword";
+
+            // Act
+            bool result = dataAccess.CreateUser(username, password);
+
+            // Assert
+            Assert.IsTrue(result);
+        }
+
+        [Test]
+        public void GetUser_ShouldReturnUser()
+        {
+            // Arrange
+            DataAccess dataAccess = new DataAccess(connectionString);
+            string username = "testuser";
+            string password = "testpassword";
+            
+            // Create user first
+            dataAccess.CreateUser(username, password);
+
+            // Act
+            User user = dataAccess.GetUser(username, password);
+
+            // Assert
+            Assert.IsNotNull(user);
+            Assert.AreEqual(username, user.Username);
+        }
+    }
+}
+
+
+using NUnit.Framework;
+using ShoppingCartApp.Data;
+using ShoppingCartApp.Models;
+using System;
+using System.Configuration;
+
+namespace ShoppingCartApp.Tests
+{
+    [TestFixture]
+    public class DataAccessTest
+    {
+        private string connectionString;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Initialize or retrieve your connection string from configuration
+            connectionString = ConfigurationManager.ConnectionStrings["ShoppingCartDB"].ConnectionString;
+        }
+
+        [Test]
+        public void AddToCart_ShouldAddProductToCart()
+        {
+            // Arrange
+            DataAccess dataAccess = new DataAccess(connectionString);
+            int userId = 1; // Replace with actual user ID
+            int productId = 1; // Replace with actual product ID
+            int quantity = 1;
+
+            // Act
+            dataAccess.AddToCart(userId, productId, quantity);
+
+            // Assert - Verify that product was added to cart
+            var cartItems = dataAccess.GetCartItems(userId);
+            Assert.IsNotNull(cartItems);
+            Assert.IsTrue(cartItems.Exists(item => item.ProductID == productId));
+        }
+
+        [Test]
+        public void RemoveFromCart_ShouldRemoveProductFromCart()
+        {
+            // Arrange
+            DataAccess dataAccess = new DataAccess(connectionString);
+            int userId = 1; // Replace with actual user ID
+            int productId = 1; // Replace with actual product ID
+
+            // Act
+            dataAccess.RemoveFromCart(userId, productId);
+
+            // Assert - Verify that product was removed from cart
+            var cartItems = dataAccess.GetCartItems(userId);
+            Assert.IsNotNull(cartItems);
+            Assert.IsFalse(cartItems.Exists(item => item.ProductID == productId));
+        }
+
+        [Test]
+        public void UpdateProduct_ShouldUpdateProductDetails()
+        {
+            // Arrange
+            DataAccess dataAccess = new DataAccess(connectionString);
+            int productId = 1; // Replace with actual product ID
+            string updatedProductName = "Updated Product";
+            decimal updatedPrice = 25.99m;
+
+            // Act
+            dataAccess.UpdateProduct(productId, updatedProductName, updatedPrice);
+
+            // Assert - Verify that product details were updated
+            Product updatedProduct = dataAccess.GetProductById(productId);
+            Assert.IsNotNull(updatedProduct);
+            Assert.AreEqual(updatedProductName, updatedProduct.ProductName);
+            Assert.AreEqual(updatedPrice, updatedProduct.Price);
+        }
+    }
+}
