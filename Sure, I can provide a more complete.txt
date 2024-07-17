@@ -1,0 +1,293 @@
+Sure, I can provide a more complete implementation of the ASP.NET Core backend code with all the necessary library imports included. Here is the complete code for each part of the project.
+
+Step 1: Create the ASP.NET Core Web API Project
+First, create a new ASP.NET Core Web API project and add the necessary NuGet package for MSMQ:
+
+sh
+Copy code
+dotnet new webapi -n BankSystemApi
+cd BankSystemApi
+dotnet add package System.Messaging
+Step 2: Implement the Counter Logic
+Program.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+
+namespace BankSystemApi
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            CreateHostBuilder(args).Build().Run();
+        }
+
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.UseStartup<Startup>();
+                });
+    }
+}
+Startup.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+namespace BankSystemApi
+{
+    public class Startup
+    {
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public IConfiguration Configuration { get; }
+
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddControllers();
+            services.AddSingleton<MsmqService>();
+        }
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+
+            app.UseRouting();
+
+            app.UseAuthorization();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
+        }
+    }
+}
+MsmqService.cs
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Messaging;
+
+namespace BankSystemApi
+{
+    public class MsmqService
+    {
+        private readonly Dictionary<string, string[]> _queues = new Dictionary<string, string[]>
+        {
+            { "CashQueue", new[] { @".\Private$\CashQueue1", @".\Private$\CashQueue2", @".\Private$\CashQueue3", @".\Private$\CashQueue4" } },
+            { "LoanQueue", new[] { @".\Private$\LoanQueue1", @".\Private$\LoanQueue2", @".\Private$\LoanQueue3", @".\Private$\LoanQueue4" } },
+            { "AccountSummaryQueue", new[] { @".\Private$\AccountSummaryQueue1", @".\Private$\AccountSummaryQueue2", @".\Private$\AccountSummaryQueue3", @".\Private$\AccountSummaryQueue4" } }
+        };
+
+        public MsmqService()
+        {
+            foreach (var queueSet in _queues.Values)
+            {
+                foreach (var queuePath in queueSet)
+                {
+                    if (!MessageQueue.Exists(queuePath))
+                    {
+                        MessageQueue.Create(queuePath);
+                    }
+                }
+            }
+        }
+
+        public void SendMessage<T>(T message, string queueKey)
+        {
+            var queuePaths = _queues[queueKey];
+            var selectedQueuePath = GetAvailableQueue(queuePaths);
+            using (var queue = new MessageQueue(selectedQueuePath))
+            {
+                queue.Formatter = new XmlMessageFormatter(new Type[] { typeof(T) });
+                queue.Send(message);
+            }
+        }
+
+        public T ReceiveMessage<T>(string queueKey)
+        {
+            var queuePaths = _queues[queueKey];
+            foreach (var queuePath in queuePaths)
+            {
+                using (var queue = new MessageQueue(queuePath))
+                {
+                    queue.Formatter = new XmlMessageFormatter(new Type[] { typeof(T) });
+                    if (queue.GetAllMessages().Length > 0)
+                    {
+                        var msg = queue.Receive();
+                        return (T)msg.Body;
+                    }
+                }
+            }
+            return default;
+        }
+
+        private string GetAvailableQueue(string[] queuePaths)
+        {
+            foreach (var queuePath in queuePaths)
+            {
+                using (var queue = new MessageQueue(queuePath))
+                {
+                    if (queue.GetAllMessages().Length < 10) // assuming 10 is the threshold for a full queue
+                    {
+                        return queuePath;
+                    }
+                }
+            }
+            return queuePaths[0]; // fallback to the first queue if all are full
+        }
+    }
+}
+Models
+Create models for the services (Cash, Loan, AccountSummary, etc.).
+
+csharp
+Copy code
+// Models/Cash.cs
+namespace BankSystemApi.Models
+{
+    public class Cash
+    {
+        public int Id { get; set; }
+        public decimal Amount { get; set; }
+    }
+}
+
+// Models/Loan.cs
+namespace BankSystemApi.Models
+{
+    public class Loan
+    {
+        public int Id { get; set; }
+        public decimal Amount { get; set; }
+        public double InterestRate { get; set; }
+    }
+}
+
+// Models/AccountSummary.cs
+namespace BankSystemApi.Models
+{
+    public class AccountSummary
+    {
+        public int AccountId { get; set; }
+        public decimal Balance { get; set; }
+    }
+}
+Controllers
+Create controllers for each service.
+
+csharp
+Copy code
+// Controllers/CashController.cs
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class CashController : ControllerBase
+    {
+        private readonly MsmqService _msmqService;
+
+        public CashController(MsmqService msmqService)
+        {
+            _msmqService = msmqService;
+        }
+
+        [HttpGet]
+        public IActionResult GetCashDetails()
+        {
+            var cashDetails = _msmqService.ReceiveMessage<Cash>("CashQueue");
+            return Ok(cashDetails);
+        }
+
+        [HttpPost]
+        public IActionResult AddCash([FromBody] Cash cash)
+        {
+            _msmqService.SendMessage(cash, "CashQueue");
+            return Ok();
+        }
+    }
+}
+
+// Controllers/LoanController.cs
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class LoanController : ControllerBase
+    {
+        private readonly MsmqService _msmqService;
+
+        public LoanController(MsmqService msmqService)
+        {
+            _msmqService = msmqService;
+        }
+
+        [HttpGet]
+        public IActionResult GetLoanDetails()
+        {
+            var loanDetails = _msmqService.ReceiveMessage<Loan>("LoanQueue");
+            return Ok(loanDetails);
+        }
+
+        [HttpPost]
+        public IActionResult AddLoan([FromBody] Loan loan)
+        {
+            _msmqService.SendMessage(loan, "LoanQueue");
+            return Ok();
+        }
+    }
+}
+
+// Controllers/AccountSummaryController.cs
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AccountSummaryController : ControllerBase
+    {
+        private readonly MsmqService _msmqService;
+
+        public AccountSummaryController(MsmqService msmqService)
+        {
+            _msmqService = msmqService;
+        }
+
+        [HttpGet]
+        public IActionResult GetAccountSummary()
+        {
+            var summary = _msmqService.ReceiveMessage<AccountSummary>("AccountSummaryQueue");
+            return Ok(summary);
+        }
+    }
+}
+Running the Application
+Backend: Run the ASP.NET Core API.
+sh
+Copy code
+cd BankSystemApi
+dotnet run
+This setup will start the backend, allowing you to interact with your banking services through the API, with the backend efficiently managing the load across multiple counters using MSMQ.
