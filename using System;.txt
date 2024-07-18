@@ -1,0 +1,115 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Experimental.System.Messaging;
+
+namespace BankSystemApi
+{
+    public class MsmqService
+    {
+        private readonly Dictionary<string, string[]> _queues = new Dictionary<string, string[]>
+        {
+            { "CashQueue", new[] { @".\Private$\CashQueue1", @".\Private$\CashQueue2", @".\Private$\CashQueue3", @".\Private$\CashQueue4" } },
+            { "LoanQueue", new[] { @".\Private$\LoanQueue1", @".\Private$\LoanQueue2", @".\Private$\LoanQueue3", @".\Private$\LoanQueue4" } },
+            { "AccountSummaryQueue", new[] { @".\Private$\AccountSummaryQueue1", @".\Private$\AccountSummaryQueue2", @".\Private$\AccountSummaryQueue3", @".\Private$\AccountSummaryQueue4" } }
+        };
+
+        private readonly Dictionary<string, SortedList<int, Queue<object>>> _priorityQueues = new Dictionary<string, SortedList<int, Queue<object>>>();
+
+        public MsmqService()
+        {
+            foreach (var queueSet in _queues.Values)
+            {
+                foreach (var queuePath in queueSet)
+                {
+                    if (!MessageQueue.Exists(queuePath))
+                    {
+                        MessageQueue.Create(queuePath);
+                    }
+                }
+            }
+
+            foreach (var key in _queues.Keys)
+            {
+                _priorityQueues[key] = new SortedList<int, Queue<object>>(new DescendingComparer<int>());
+            }
+        }
+
+        public void SendMessage<T>(T message, string queueKey)
+        {
+            if (message is Cash cash)
+            {
+                // Add message to the priority queue
+                if (!_priorityQueues[queueKey].ContainsKey(cash.Priority))
+                {
+                    _priorityQueues[queueKey][cash.Priority] = new Queue<object>();
+                }
+                _priorityQueues[queueKey][cash.Priority].Enqueue(cash);
+            }
+            else
+            {
+                var queuePaths = _queues[queueKey];
+                var selectedQueuePath = GetAvailableQueue(queuePaths);
+                using (var queue = new MessageQueue(selectedQueuePath))
+                {
+                    queue.Formatter = new XmlMessageFormatter(new Type[] { typeof(T) });
+                    queue.Send(message);
+                }
+            }
+        }
+
+        public T ReceiveMessage<T>(string queueKey)
+        {
+            if (_priorityQueues[queueKey].Count > 0)
+            {
+                var highestPriority = _priorityQueues[queueKey].First();
+                var message = (T)highestPriority.Value.Dequeue();
+                if (highestPriority.Value.Count == 0)
+                {
+                    _priorityQueues[queueKey].Remove(highestPriority.Key);
+                }
+                return message;
+            }
+            else
+            {
+                var queuePaths = _queues[queueKey];
+                foreach (var queuePath in queuePaths)
+                {
+                    using (var queue = new MessageQueue(queuePath))
+                    {
+                        queue.Formatter = new XmlMessageFormatter(new Type[] { typeof(T) });
+                        if (queue.GetAllMessages().Length > 0)
+                        {
+                            var msg = queue.Receive();
+                            return (T)msg.Body;
+                        }
+                    }
+                }
+            }
+            return default;
+        }
+
+        private string GetAvailableQueue(string[] queuePaths)
+        {
+            foreach (var queuePath in queuePaths)
+            {
+                using (var queue = new MessageQueue(queuePath))
+                {
+                    if (queue.GetAllMessages().Length < 10) // assuming 10 is the threshold for a full queue
+                    {
+                        return queuePath;
+                    }
+                }
+            }
+            return queuePaths[0]; // fallback to the first queue if all are full
+        }
+    }
+
+    public class DescendingComparer<T> : IComparer<T> where T : IComparable<T>
+    {
+        public int Compare(T x, T y)
+        {
+            return y.CompareTo(x);
+        }
+    }
+}
