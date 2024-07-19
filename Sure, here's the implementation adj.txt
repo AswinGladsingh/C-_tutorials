@@ -1,0 +1,443 @@
+Sure, here's the implementation adjusted for .NET 8.0 Long-Term Support (LTS):
+
+Directory Structure
+Copy code
+BankSystemApi/
+│
+├── Controllers/
+│   ├── CashController.cs
+│   ├── LoanController.cs
+│   └── AccountSummaryController.cs
+│
+├── Services/
+│   └── MsmqService.cs
+│
+├── Models/
+│   ├── Cash.cs
+│   ├── Loan.cs
+│   └── AccountSummary.cs
+│
+├── Program.cs
+├── Startup.cs
+└── BankSystemApi.csproj
+Models
+Cash.cs
+csharp
+Copy code
+namespace BankSystemApi.Models
+{
+    public class Cash
+    {
+        public int Id { get; set; }
+        public double Amount { get; set; }
+        public int Priority { get; set; }
+    }
+}
+Loan.cs
+csharp
+Copy code
+namespace BankSystemApi.Models
+{
+    public class Loan
+    {
+        public int Id { get; set; }
+        public double Amount { get; set; }
+        public double InterestRate { get; set; }
+    }
+}
+AccountSummary.cs
+csharp
+Copy code
+namespace BankSystemApi.Models
+{
+    public class AccountSummary
+    {
+        public int AccountId { get; set; }
+        public string Summary { get; set; }
+    }
+}
+Services
+MsmqService.cs
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Messaging;
+using System.Threading;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Services
+{
+    public class MsmqService
+    {
+        private readonly Dictionary<string, string[]> _queues;
+        private readonly Dictionary<string, SortedList<int, Queue<object>>> _priorityQueues = new Dictionary<string, SortedList<int, Queue<object>>>();
+        private readonly Dictionary<string, Timer> _timers = new Dictionary<string, Timer>();
+
+        public MsmqService()
+        {
+            _queues = InitializeQueuePaths();
+            CreateQueues();
+            InitializeTimers();
+        }
+
+        private Dictionary<string, string[]> InitializeQueuePaths()
+        {
+            return new Dictionary<string, string[]>
+            {
+                { "CashQueue", new[] { @".\Private$\CashQueue1", @".\Private$\CashQueue2", @".\Private$\CashQueue3", @".\Private$\CashQueue4" } },
+                { "LoanQueue", new[] { @".\Private$\LoanQueue1", @".\Private$\LoanQueue2", @".\Private$\LoanQueue3", @".\Private$\LoanQueue4" } },
+                { "AccountSummaryQueue", new[] { @".\Private$\AccountSummaryQueue1", @".\Private$\AccountSummaryQueue2", @".\Private$\AccountSummaryQueue3", @".\Private$\AccountSummaryQueue4" } }
+            };
+        }
+
+        private void CreateQueues()
+        {
+            foreach (var queueSet in _queues.Values)
+            {
+                foreach (var queuePath in queueSet)
+                {
+                    try
+                    {
+                        if (!MessageQueue.Exists(queuePath))
+                        {
+                            MessageQueue.Create(queuePath);
+                            Console.WriteLine($"Queue created: {queuePath}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Queue already exists: {queuePath}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error creating queue: {queuePath}. Exception: {ex.Message}");
+                    }
+                }
+            }
+
+            foreach (var key in _queues.Keys)
+            {
+                _priorityQueues[key] = new SortedList<int, Queue<object>>(new DescendingComparer<int>());
+            }
+        }
+
+        private void InitializeTimers()
+        {
+            foreach (var queueKey in _queues.Keys)
+            {
+                var timer = new Timer(ProcessQueue, queueKey, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+                _timers[queueKey] = timer;
+            }
+        }
+
+        private void ProcessQueue(object state)
+        {
+            var queueKey = (string)state;
+            Console.WriteLine($"Processing {queueKey} at {DateTime.Now}");
+
+            if (_priorityQueues[queueKey].Count > 0)
+            {
+                var highestPriority = _priorityQueues[queueKey].First();
+                var message = highestPriority.Value.Dequeue();
+                if (highestPriority.Value.Count == 0)
+                {
+                    _priorityQueues[queueKey].Remove(highestPriority.Key);
+                }
+                ProcessMessage(message, queueKey);
+            }
+            else
+            {
+                var queuePaths = _queues[queueKey];
+                foreach (var queuePath in queuePaths)
+                {
+                    using (var queue = new MessageQueue(queuePath))
+                    {
+                        queue.Formatter = new XmlMessageFormatter(new Type[] { typeof(object) });
+                        if (queue.GetAllMessages().Length > 0)
+                        {
+                            var msg = queue.Receive();
+                            ProcessMessage(msg.Body, queueKey);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void ProcessMessage(object message, string queueKey)
+        {
+            // Implement your message processing logic here.
+            Console.WriteLine($"Processing message from {queueKey}: {message}");
+        }
+
+        public void SendMessage<T>(T message, string queueKey)
+        {
+            if (message is Cash cash)
+            {
+                if (!_priorityQueues[queueKey].ContainsKey(cash.Priority))
+                {
+                    _priorityQueues[queueKey][cash.Priority] = new Queue<object>();
+                }
+                _priorityQueues[queueKey][cash.Priority].Enqueue(cash);
+            }
+            else
+            {
+                var queuePaths = _queues[queueKey];
+                var selectedQueuePath = GetAvailableQueue(queuePaths);
+                using (var queue = new MessageQueue(selectedQueuePath))
+                {
+                    queue.Formatter = new XmlMessageFormatter(new Type[] { typeof(T) });
+                    var msmqMessage = new Message
+                    {
+                        Body = message,
+                        Label = GetLabelForMessage(message)
+                    };
+                    queue.Send(msmqMessage);
+                }
+            }
+        }
+
+        private string GetAvailableQueue(string[] queuePaths)
+        {
+            foreach (var queuePath in queuePaths)
+            {
+                using (var queue = new MessageQueue(queuePath))
+                {
+                    if (queue.GetAllMessages().Length < 10) // assuming 10 is the threshold for a full queue
+                    {
+                        return queuePath;
+                    }
+                }
+            }
+            return queuePaths[0]; // fallback to the first queue if all are full
+        }
+
+        private string GetLabelForMessage<T>(T message)
+        {
+            if (message is Cash cash)
+            {
+                return $"Cash Transaction: {cash.Amount:C}";
+            }
+            else if (message is Loan loan)
+            {
+                return $"Loan Transaction: {loan.Amount:C} at {loan.InterestRate}%";
+            }
+            else if (message is AccountSummary accountSummary)
+            {
+                return $"Account Summary for Account ID: {accountSummary.AccountId}";
+            }
+            return "Unknown Message Type";
+        }
+    }
+
+    public class DescendingComparer<T> : IComparer<T> where T : IComparable<T>
+    {
+        public int Compare(T x, T y)
+        {
+            return y.CompareTo(x);
+        }
+    }
+}
+Controllers
+CashController.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Services;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class CashController : ControllerBase
+    {
+        private readonly MsmqService _msmqService;
+
+        public CashController(MsmqService msmqService)
+        {
+            _msmqService = msmqService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Post([FromBody] Cash cash)
+        {
+            _msmqService.SendMessage(cash, "CashQueue");
+            return Ok("Cash message sent to queue");
+        }
+    }
+}
+LoanController.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Services;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class LoanController : ControllerBase
+    {
+        private readonly MsmqService _msmqService;
+
+        public LoanController(MsmqService msmqService)
+        {
+            _msmqService = msmqService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Post([FromBody] Loan loan)
+        {
+            _msmqService.SendMessage(loan, "LoanQueue");
+            return Ok("Loan message sent to queue");
+        }
+    }
+}
+AccountSummaryController.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Services;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AccountSummaryController : ControllerBase
+    {
+        private readonly MsmqService _msmqService;
+
+        public AccountSummaryController(MsmqService msmqService)
+        {
+            _msmqService = msmqService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Post([FromBody] AccountSummary accountSummary)
+        {
+            _msmqService.SendMessage(accountSummary, "AccountSummaryQueue");
+            return Ok("Account summary message sent to queue");
+        }
+    }
+}
+Startup.cs
+Ensure your Startup.cs file is set up to use these controllers and the MsmqService.
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using BankSystemApi.Services;
+
+namespace BankSystemApi
+{
+    public class Startup
+    {
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public IConfiguration Configuration { get; }
+
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddSingleton<MsmqService>();
+            services.AddControllers();
+        }
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+
+            app.UseRouting();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
+        }
+    }
+}
+Program.cs
+Ensure your Program.cs is set up to run the web application.
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+
+namespace BankSystemApi
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            CreateHostBuilder(args).Build().Run();
+        }
+
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.UseStartup<Startup>();
+                });
+    }
+}
+Steps to Test
+Build and Run the Application:
+Ensure that the application builds and runs correctly.
+
+Send Messages Using Postman:
+
+Open Postman and send a POST request to http://localhost:5000/api/cash with the following body:
+json
+Copy code
+{
+  "id": 1,
+  "amount": 2000.00,
+  "priority": 2000
+}
+Send a POST request to http://localhost:5000/api/loan with the following body:
+json
+Copy code
+{
+  "id": 1,
+  "amount": 5000.00,
+  "interestRate": 5.0
+}
+Send a POST request to http://localhost:5000/api/accountsummary with the following body:
+json
+Copy code
+{
+  "accountId": 1,
+  "summary": "Account summary details here."
+}
+Check Console Output:
+Observe the console output for messages indicating that the queues are being processed every minute.
+
+View Queues in Computer Management:
+
+Open Computer Management.
+Navigate to Services and Applications -> Message Queuing -> Private Queues.
+Check for the presence of CashQueue1, LoanQueue1, AccountSummaryQueue1, etc., and verify the messages are being processed.
+By following these steps, you should be able to test the queue functionality and ensure that messages are being added to their respective queues and processed every minute.
+
+
+
+
+
+
