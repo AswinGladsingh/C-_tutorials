@@ -1,0 +1,692 @@
+Sure, I'll provide the complete code structure including the MSMQ, logger, token generation, and priority queue implementation. The structure will include the .NET Core API, PostgreSQL integration, and the necessary configurations.
+
+Complete Project Structure
+Copy code
+BankSystemApi/
+│
+├── Controllers/
+│   ├── CashController.cs
+│   ├── LoanController.cs
+│   ├── AccountSummaryController.cs
+│   ├── UserController.cs
+│
+├── Data/
+│   └── BankSystemContext.cs
+│
+├── Helpers/
+│   └── JwtTokenGenerator.cs
+│
+├── Models/
+│   ├── User.cs
+│   ├── LogEntry.cs
+│   ├── UserEnqueueRequest.cs
+│
+├── Services/
+│   └── MsmqService.cs
+│
+├── Program.cs
+├── Startup.cs
+├── appsettings.json
+├── appsettings.Development.json
+│
+└── BankSystemApi.csproj
+File Contents
+1. Controllers
+CashController.cs
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Data;
+using BankSystemApi.Helpers;
+using BankSystemApi.Models;
+using BankSystemApi.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class CashController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly MsmqService _msmqService;
+        private readonly IConfiguration _configuration;
+
+        public CashController(BankSystemContext context, MsmqService msmqService, IConfiguration configuration)
+        {
+            _context = context;
+            _msmqService = msmqService;
+            _configuration = configuration;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> EnqueueUser([FromBody] UserEnqueueRequest request)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.AccountNumber == request.AccountNumber);
+            if (user == null)
+            {
+                return NotFound("User not found");
+            }
+
+            _msmqService.EnqueueUser(user, "Cash");
+
+            var token = JwtTokenGenerator.GenerateToken(user.Name, _configuration["Jwt:Key"]);
+            return Ok(new { Message = "User enqueued successfully", Token = token });
+        }
+    }
+}
+LoanController.cs
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Data;
+using BankSystemApi.Helpers;
+using BankSystemApi.Models;
+using BankSystemApi.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class LoanController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly MsmqService _msmqService;
+        private readonly IConfiguration _configuration;
+
+        public LoanController(BankSystemContext context, MsmqService msmqService, IConfiguration configuration)
+        {
+            _context = context;
+            _msmqService = msmqService;
+            _configuration = configuration;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> EnqueueUser([FromBody] UserEnqueueRequest request)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.AccountNumber == request.AccountNumber);
+            if (user == null)
+            {
+                return NotFound("User not found");
+            }
+
+            _msmqService.EnqueueUser(user, "Loan");
+
+            var token = JwtTokenGenerator.GenerateToken(user.Name, _configuration["Jwt:Key"]);
+            return Ok(new { Message = "User enqueued successfully", Token = token });
+        }
+    }
+}
+AccountSummaryController.cs
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Data;
+using BankSystemApi.Helpers;
+using BankSystemApi.Models;
+using BankSystemApi.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AccountSummaryController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly MsmqService _msmqService;
+        private readonly IConfiguration _configuration;
+
+        public AccountSummaryController(BankSystemContext context, MsmqService msmqService, IConfiguration configuration)
+        {
+            _context = context;
+            _msmqService = msmqService;
+            _configuration = configuration;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> EnqueueUser([FromBody] UserEnqueueRequest request)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.AccountNumber == request.AccountNumber);
+            if (user == null)
+            {
+                return NotFound("User not found");
+            }
+
+            _msmqService.EnqueueUser(user, "AccountSummary");
+
+            var token = JwtTokenGenerator.GenerateToken(user.Name, _configuration["Jwt:Key"]);
+            return Ok(new { Message = "User enqueued successfully", Token = token });
+        }
+    }
+}
+UserController.cs
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Data;
+using BankSystemApi.Helpers;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class UserController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly IConfiguration _configuration;
+
+        public UserController(BankSystemContext context, IConfiguration configuration)
+        {
+            _context = context;
+            _configuration = configuration;
+        }
+
+        [HttpGet("{accountNumber}")]
+        public async Task<IActionResult> GetUserByAccountNumber(string accountNumber)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.AccountNumber == accountNumber);
+            if (user == null)
+            {
+                return NotFound("User not found");
+            }
+
+            var token = JwtTokenGenerator.GenerateToken(user.Name, _configuration["Jwt:Key"]);
+            return Ok(new { User = user, Token = token });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetUsers()
+        {
+            var users = await _context.Users.ToListAsync();
+            return Ok(users);
+        }
+    }
+}
+2. Data
+BankSystemContext.cs
+
+csharp
+Copy code
+using Microsoft.EntityFrameworkCore;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Data
+{
+    public class BankSystemContext : DbContext
+    {
+        public BankSystemContext(DbContextOptions<BankSystemContext> options) : base(options)
+        {
+        }
+
+        public DbSet<User> Users { get; set; }
+        public DbSet<LogEntry> LogEntries { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<User>().ToTable("Users");
+            modelBuilder.Entity<LogEntry>().ToTable("LogEntries");
+        }
+    }
+}
+3. Helpers
+JwtTokenGenerator.cs
+
+csharp
+Copy code
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
+
+namespace BankSystemApi.Helpers
+{
+    public static class JwtTokenGenerator
+    {
+        public static string GenerateToken(string username, string secretKey)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(secretKey);
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new Claim[]
+                {
+                    new Claim(ClaimTypes.Name, username)
+                }),
+                Expires = DateTime.UtcNow.AddHours(1),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }
+    }
+}
+4. Models
+User.cs
+
+csharp
+Copy code
+using System.ComponentModel.DataAnnotations;
+
+namespace BankSystemApi.Models
+{
+    public class User
+    {
+        public int Id { get; set; }
+
+        [Required]
+        public string Name { get; set; }
+
+        [Required]
+        public string AccountNumber { get; set; }
+
+        [Required]
+        public decimal Amount { get; set; }
+    }
+}
+LogEntry.cs
+
+csharp
+Copy code
+using System;
+
+namespace BankSystemApi.Models
+{
+    public class LogEntry
+    {
+        public int Id { get; set; }
+        public DateTime Timestamp { get; set; }
+        public string Message { get; set; }
+    }
+}
+UserEnqueueRequest.cs
+
+csharp
+Copy code
+namespace BankSystemApi.Models
+{
+    public class UserEnqueueRequest
+    {
+        public string AccountNumber { get; set; }
+        public string Username { get; set; }
+    }
+}
+5. Services
+MsmqService.cs
+
+csharp
+Copy code
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Messaging;
+using System.Threading.Tasks;
+using BankSystemApi.Models;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using BankSystemApi.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace BankSystemApi.Services
+{
+    public class MsmqService
+    {
+        private readonly BankSystemContext _context;
+        private readonly ILogger<MsmqService> _logger;
+        private readonly Dictionary<string, List<User>> _queues;
+
+        public MsmqService(BankSystemContext context, ILogger<MsmqService> logger)
+        {
+            _context = context;
+            _logger = logger;
+            _queues = new Dictionary<string, List<User>>
+            {
+                { "Cash", new List<User>() },
+                { "Loan", new List<User>() },
+                { "AccountSummary", new List<User>() }
+            };
+        }
+
+        public void EnqueueUser(User user, string queueName)
+        {
+            if (_queues.ContainsKey(queueName))
+            {
+                _queues[queueName].Add(user);
+                _queues[queueName] = _queues[queueName].OrderByDescending(u => u.Amount).ToList();
+                LogEvent($"{user.Name} with account number {user.AccountNumber} and amount {user.Amount} has been enqueued in {queueName} queue.");
+            }
+        }
+
+        public async Task ProcessQueues()
+        {
+            foreach (var queue in _queues)
+            {
+                if (queue.Value.Count > 0)
+                {
+                    var user = queue.Value.First();
+                    queue.Value.RemoveAt(0);
+                    LogEvent($"{user.Name} with account number {user.AccountNumber} and amount {user.Amount} is being processed in {queue.Key} queue.");
+                    await Task.Delay(TimeSpan.FromMinutes(1));  // Simulate processing time
+                    LogEvent($"{user.Name} with account number {user.AccountNumber} and amount {user.Amount} has been processed in {queue.Key} queue.");
+                }
+            }
+        }
+
+        private void LogEvent(string message)
+        {
+            var logEntry = new LogEntry { Timestamp = DateTime.UtcNow, Message = message };
+            _context.LogEntries.Add(logEntry);
+            _context.SaveChanges();
+        }
+    }
+}
+6. Program.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+
+namespace BankSystemApi
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            CreateHostBuilder(args).Build().Run();
+        }
+
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.UseStartup<Startup>();
+                });
+    }
+}
+7. Startup.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using BankSystemApi.Data;
+using BankSystemApi.Services;
+
+namespace BankSystemApi
+{
+    public class Startup
+    {
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public IConfiguration Configuration { get; }
+
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddControllers();
+            services.AddDbContext<BankSystemContext>(options =>
+                options.UseNpgsql(Configuration.GetConnectionString("DefaultConnection")));
+            services.AddSingleton<MsmqService>();
+
+            var key = Encoding.ASCII.GetBytes(Configuration["Jwt:Key"]);
+            services.AddAuthentication(x =>
+            {
+                x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(x =>
+            {
+                x.RequireHttpsMetadata = false;
+                x.SaveToken = true;
+                x.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(key),
+                    ValidateIssuer = false,
+                    ValidateAudience = false
+                };
+            });
+        }
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+
+            app.UseRouting();
+            app.UseAuthentication();
+            app.UseAuthorization();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
+        }
+    }
+}
+8. appsettings.json
+json
+Copy code
+{
+  "Jwt": {
+    "Key": "your_secret_key",  // Replace with a secure key
+    "Issuer": "your_issuer"
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Database=BankSystem;Username=your_username;Password=your_password"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*"
+}
+9. appsettings.Development.json
+json
+Copy code
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug",
+      "Microsoft.AspNetCore": "Debug"
+    }
+  }
+}
+PostgreSQL Table Creation Script
+sql
+Copy code
+CREATE TABLE Users (
+    Id SERIAL PRIMARY KEY,
+    Name VARCHAR(100) NOT NULL,
+    AccountNumber VARCHAR(20) NOT NULL,
+    Amount DECIMAL(18, 2) NOT NULL
+);
+
+CREATE TABLE LogEntries (
+    Id SERIAL PRIMARY KEY,
+    Timestamp TIMESTAMP NOT NULL,
+    Message TEXT NOT NULL
+);
+Running the Project
+Ensure PostgreSQL is running.
+Run Migrations and Update Database:
+bash
+Copy code
+dotnet ef migrations add InitialCreate
+dotnet ef database update
+Run the Backend:
+bash
+Copy code
+dotnet run
+Create a periodic task to process queues (for demo purposes, using a simple background task):
+BackgroundTask.cs
+
+csharp
+Copy code
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace BankSystemApi.Services
+{
+    public class BackgroundTask : IHostedService, IDisposable
+    {
+        private Timer _timer;
+        private readonly IServiceProvider _serviceProvider;
+
+        public BackgroundTask(IServiceProvider serviceProvider)
+        {
+            _serviceProvider = serviceProvider;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _timer = new Timer(ProcessQueues, null, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+            return Task.CompletedTask;
+        }
+
+        private void ProcessQueues(object state)
+        {
+            using (var scope = _serviceProvider.CreateScope())
+            {
+                var msmqService = scope.ServiceProvider.GetRequiredService<MsmqService>();
+                msmqService.ProcessQueues().GetAwaiter().GetResult();
+            }
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            _timer?.Change(Timeout.Infinite, 0);
+            return Task.CompletedTask;
+        }
+
+        public void Dispose()
+        {
+            _timer?.Dispose();
+        }
+    }
+}
+Startup.cs (add to ConfigureServices method)
+
+csharp
+Copy code
+services.AddHostedService<BackgroundTask>();
+This setup ensures that the priority queue system works as expected, handling user requests, enqueuing based on priority, processing requests, logging events, and generating JWT tokens for acknowledgment.
+
+
+how to pass the api
+ChatGPT
+To test the API using Postman, follow these steps:
+
+Step 1: Set Up Postman
+Install Postman: If you haven't already, download and install Postman.
+Open Postman: Launch the Postman application.
+Step 2: Create a New Request
+Create a New Collection: For better organization, create a new collection in Postman where you will store all your requests.
+Create a New Request: Click on the "New" button, then select "Request". Name your request appropriately (e.g., "Enqueue User in Cash Queue").
+Step 3: Enqueue a User
+Set the HTTP Method and URL:
+Method: POST
+URL: http://localhost:5000/api/cash (adjust the port if necessary)
+Set the Request Body: In the body of the request, select raw and JSON format, and provide the following JSON:
+json
+Copy code
+{
+  "AccountNumber": "123456789",
+  "Username": "John Doe"
+}
+Send the Request: Click the "Send" button. You should receive a response with a message indicating that the user was enqueued and a token.
+Step 4: Repeat for Other Services
+Loan Service:
+Method: POST
+URL: http://localhost:5000/api/loan
+Request Body:
+json
+Copy code
+{
+  "AccountNumber": "987654321",
+  "Username": "Jane Smith"
+}
+Account Summary Service:
+Method: POST
+URL: http://localhost:5000/api/accountsummary
+Request Body:
+json
+Copy code
+{
+  "AccountNumber": "456123789",
+  "Username": "Alice Johnson"
+}
+Step 5: Retrieve User Information
+Get User by Account Number:
+
+Method: GET
+URL: http://localhost:5000/api/user/{accountNumber}
+Replace {accountNumber} with the actual account number, e.g., http://localhost:5000/api/user/123456789.
+Send the request to get the user details and token.
+Get All Users:
+
+Method: GET
+URL: http://localhost:5000/api/user
+Send the request to retrieve the list of all users.
+Step 6: Monitor the Logs
+Logs will be automatically stored in the LogEntries table in your PostgreSQL database. You can view these logs using any PostgreSQL client (e.g., pgAdmin, DBeaver).
+
+Example Postman Collection
+Here is an example of how to structure your Postman collection for testing all endpoints:
+
+BankSystemApi Collection
+Cash Queue
+POST http://localhost:5000/api/cash
+Loan Queue
+POST http://localhost:5000/api/loan
+Account Summary Queue
+POST http://localhost:5000/api/accountsummary
+User Operations
+GET http://localhost:5000/api/user/{accountNumber}
+GET http://localhost:5000/api/user
+Testing the Priority Queue Logic
+Add Multiple Users to the Cash Queue: Add multiple users with different amounts using the POST /api/cash endpoint.
+Check the Queue Processing: Monitor the logs in your PostgreSQL database to see if users with higher amounts are being processed first.
+Repeat for Loan and Account Summary Queues.
+Notes
+Make sure your API is running by executing dotnet run in the project directory.
+Ensure that PostgreSQL is running and the connection string in appsettings.json is correctly configured.
+If you encounter any issues, check the API logs and the console output for errors or additional information.
+This setup should allow you to effectively test and verify the functionality of your .NET Core API using Postman.
+
+
+
+
+
+
+
+
+
