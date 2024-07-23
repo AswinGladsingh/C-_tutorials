@@ -1,0 +1,1059 @@
+Project File Structure
+arduino
+Copy code
+BankSystemApi/
+│
+├── Controllers/
+│   ├── AccountSummaryController.cs
+│   ├── CashController.cs
+│   ├── LoanController.cs
+│   └── UserController.cs
+│
+├── Data/
+│   ├── BankSystemContext.cs
+│   ├── SeedData.cs
+│   └── LoggingDataContext.cs
+│
+├── Models/
+│   ├── User.cs
+│   ├── QueueItem.cs
+│   └── UserQueueStatus.cs
+│
+├── Services/
+│   ├── MsmqService.cs
+│   ├── TokenService.cs
+│   ├── QueueProcessorService.cs
+│   └── Logger.cs
+│
+├── Logs/
+│   └── log4net.config
+│
+├── Program.cs
+├── Startup.cs
+└── appsettings.json
+File Contents
+1. Controllers/AccountSummaryController.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Data;
+using BankSystemApi.Services;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class AccountSummaryController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly TokenService _tokenService;
+        private readonly Logger _logger;
+        private readonly MsmqService _msmqService;
+
+        public AccountSummaryController(BankSystemContext context, TokenService tokenService, Logger logger, MsmqService msmqService)
+        {
+            _context = context;
+            _tokenService = tokenService;
+            _logger = logger;
+            _msmqService = msmqService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> EnqueueUser([FromBody] User user)
+        {
+            user.QueueName = "AccountSummary";
+            user.Status = "InQueue";
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            var token = _tokenService.GenerateToken(user.Name);
+            _logger.Log(LogLevel.Information, $"User {user.Name} enqueued in Account Summary queue.");
+            _msmqService.SendMessage($"User {user.Name} enqueued in Account Summary queue with amount {user.Amount}.");
+
+            return Ok(new { Message = "User enqueued in Account Summary queue.", Token = token });
+        }
+    }
+}
+2. Controllers/CashController.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Data;
+using BankSystemApi.Services;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class CashController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly TokenService _tokenService;
+        private readonly Logger _logger;
+        private readonly MsmqService _msmqService;
+
+        public CashController(BankSystemContext context, TokenService tokenService, Logger logger, MsmqService msmqService)
+        {
+            _context = context;
+            _tokenService = tokenService;
+            _logger = logger;
+            _msmqService = msmqService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> EnqueueUser([FromBody] User user)
+        {
+            user.QueueName = "Cash";
+            user.Status = "InQueue";
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            var token = _tokenService.GenerateToken(user.Name);
+            _logger.Log(LogLevel.Information, $"User {user.Name} enqueued in Cash queue.");
+            _msmqService.SendMessage($"User {user.Name} enqueued in Cash queue with amount {user.Amount}.");
+
+            return Ok(new { Message = "User enqueued in Cash queue.", Token = token });
+        }
+    }
+}
+3. Controllers/LoanController.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Data;
+using BankSystemApi.Services;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class LoanController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly TokenService _tokenService;
+        private readonly Logger _logger;
+        private readonly MsmqService _msmqService;
+
+        public LoanController(BankSystemContext context, TokenService tokenService, Logger logger, MsmqService msmqService)
+        {
+            _context = context;
+            _tokenService = tokenService;
+            _logger = logger;
+            _msmqService = msmqService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> EnqueueUser([FromBody] User user)
+        {
+            user.QueueName = "Loan";
+            user.Status = "InQueue";
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            var token = _tokenService.GenerateToken(user.Name);
+            _logger.Log(LogLevel.Information, $"User {user.Name} enqueued in Loan queue.");
+            _msmqService.SendMessage($"User {user.Name} enqueued in Loan queue with amount {user.Amount}.");
+
+            return Ok(new { Message = "User enqueued in Loan queue.", Token = token });
+        }
+    }
+}
+4. Controllers/UserController.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using BankSystemApi.Models;
+using BankSystemApi.Data;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class UserController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+
+        public UserController(BankSystemContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<User>>> GetUsers()
+        {
+            return await _context.Users.ToListAsync();
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<User>> GetUser(int id)
+        {
+            var user = await _context.Users.FindAsync(id);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            return user;
+        }
+    }
+}
+5. Data/BankSystemContext.cs
+csharp
+Copy code
+using Microsoft.EntityFrameworkCore;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Data
+{
+    public class BankSystemContext : DbContext
+    {
+        public BankSystemContext(DbContextOptions<BankSystemContext> options) : base(options) { }
+
+        public DbSet<User> Users { get; set; }
+        public DbSet<QueueItem> QueueItems { get; set; }
+        public DbSet<UserQueueStatus> UserQueueStatuses { get; set; }
+    }
+}
+6. Data/SeedData.cs
+csharp
+Copy code
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Linq;
+
+namespace BankSystemApi.Data
+{
+    public static class SeedData
+    {
+        public static void Initialize(IServiceProvider serviceProvider)
+        {
+            using (var context = new BankSystemContext(
+                serviceProvider.GetRequiredService<DbContextOptions<BankSystemContext>>()))
+            {
+                // Check if the database is already seeded
+                if (context.Users.Any())
+                {
+                    return; // DB has been seeded
+                }
+
+                // Seed users
+                context.Users.AddRange(
+                    new User { Name = "Alice", AccountNumber = "1234567890", Amount = 5000 },
+                    new User { Name = "Bob", AccountNumber = "2345678901", Amount = 3000 },
+                    new User { Name = "Charlie", AccountNumber = "3456789012", Amount = 10000 },
+                    new User { Name = "David", AccountNumber = "4567890123", Amount = 15000 }
+                );
+
+                context.SaveChanges();
+            }
+        }
+    }
+}
+7. Models/User.cs
+csharp
+Copy code
+using System.ComponentModel.DataAnnotations;
+
+namespace BankSystemApi.Models
+{
+    public class User
+    {
+        public int Id { get; set; }
+
+        [Required]
+        public string Name { get; set; }
+
+        [Required]
+        public string AccountNumber { get; set; }
+
+        [Required]
+        public decimal Amount { get; set; }
+
+        public string QueueName { get; set; }
+        public string Status { get; set; }
+    }
+}
+8. Models/QueueItem.cs
+csharp
+Copy code
+namespace BankSystemApi.Models
+{
+    public class QueueItem
+    {
+        public int Id { get; set; }
+        public string QueueName { get; set; }
+        public string Status { get; set; }
+        public string UserName { get; set; }
+        public decimal Amount { get; set; }
+    }
+}
+9. Models/UserQueueStatus.cs
+csharp
+Copy code
+using System;
+
+namespace BankSystemApi.Models
+{
+    public class UserQueueStatus
+    {
+        public int Id { get; set; }
+        public string UserName { get; set; }
+        public string QueueName { get; set; }
+        public string Status { get; set; }
+        public DateTime Timestamp { get; set; }
+    }
+}
+10. Services/MsmqService.cs
+csharp
+Copy code
+using System.Messaging;
+using log4net;
+
+namespace BankSystemApi.Services
+{
+    public class MsmqService
+    {
+        private readonly string _queuePath;
+        private static readonly ILog _logger = LogManager.GetLogger(typeof(MsmqService));
+
+        public MsmqService(string queuePath)
+        {
+            _queuePath = queuePath;
+        }
+
+        public void SendMessage(string message)
+        {
+            using (var queue = new MessageQueue(_queuePath))
+            {
+                queue.Formatter = new XmlMessageFormatter(new String[] { "System.String,mscorlib" });
+                queue.Send(message);
+                _logger.Info($"Message sent to queue {_queuePath}: {message}");
+            }
+        }
+    }
+}
+11. Services/TokenService.cs
+csharp
+Copy code
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
+
+namespace BankSystemApi.Services
+{
+    public class TokenService
+    {
+        private readonly string _key;
+
+        public TokenService(string key)
+        {
+            _key = key;
+        }
+
+        public string GenerateToken(string username)
+        {
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.Name, username)
+            };
+
+            var key = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(_key));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                claims: claims,
+                expires: DateTime.Now.AddMinutes(15),
+                signingCredentials: creds);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+    }
+}
+12. Services/QueueProcessorService.cs
+csharp
+Copy code
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using BankSystemApi.Data;
+using BankSystemApi.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace BankSystemApi.Services
+{
+    public class QueueProcessorService
+    {
+        private readonly BankSystemContext _context;
+
+        public QueueProcessorService(BankSystemContext context)
+        {
+            _context = context;
+        }
+
+        public async Task ProcessQueuesAsync()
+        {
+            var queues = new[] { "Cash", "Loan", "AccountSummary" };
+            foreach (var queueName in queues)
+            {
+                var queueItems = await _context.Users
+                    .Where(u => u.QueueName == queueName)
+                    .OrderByDescending(u => u.Amount) // Prioritize by amount
+                    .ToListAsync();
+
+                foreach (var user in queueItems)
+                {
+                    // Simulate processing with a 1-minute wait
+                    await Task.Delay(TimeSpan.FromMinutes(1));
+
+                    user.Status = "Processed";
+                    _context.Users.Update(user);
+                    await _context.SaveChangesAsync();
+
+                    // Log the processing status
+                    var status = new UserQueueStatus
+                    {
+                        UserName = user.Name,
+                        QueueName = queueName,
+                        Status = "Processed",
+                        Timestamp = DateTime.Now
+                    };
+                    _context.UserQueueStatuses.Add(status);
+                    await _context.SaveChangesAsync();
+                }
+            }
+        }
+    }
+}
+13. Services/Logger.cs
+csharp
+Copy code
+using log4net;
+
+namespace BankSystemApi.Services
+{
+    public class Logger
+    {
+        private static readonly ILog _logger = LogManager.GetLogger(typeof(Logger));
+
+        public void Log(LogLevel level, string message)
+        {
+            switch (level)
+            {
+                case LogLevel.Information:
+                    _logger.Info(message);
+                    break;
+                case LogLevel.Warning:
+                    _logger.Warn(message);
+                    break;
+                case LogLevel.Error:
+                    _logger.Error(message);
+                    break;
+            }
+        }
+    }
+
+    public enum LogLevel
+    {
+        Information,
+        Warning,
+        Error
+    }
+}
+14. Logs/log4net.config
+xml
+Copy code
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+  <configSections>
+    <section name="log4net" type="log4net.Config.Log4NetConfigurationSection, log4net" />
+  </configSections>
+
+  <log4net>
+    <appender name="RollingFileAppender" type="log4net.Appender.RollingFileAppender">
+      <file value="logs/application.log" />
+      <appendToFile value="true" />
+      <maximumFileSize value="10MB" />
+      <staticLogFileName value="true" />
+      <layout type="log4net.Layout.PatternLayout">
+        <conversionPattern value="%date %-5level %logger - %message%newline" />
+      </layout>
+    </appender>
+
+    <root>
+      <level value="DEBUG" />
+      <appender-ref ref="RollingFileAppender" />
+    </root>
+  </log4net>
+</configuration>
+15. Program.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+
+namespace BankSystemApi
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            CreateHostBuilder(args).Build().Run();
+        }
+
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.UseStartup<Startup>();
+                });
+    }
+}
+16. Startup.cs
+csharp
+Copy code
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
+using BankSystemApi.Data;
+using BankSystemApi.Services;
+using log4net;
+using log4net.Config;
+using System.IO;
+
+namespace BankSystemApi
+{
+    public class Startup
+    {
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public IConfiguration Configuration { get; }
+
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddDbContext<BankSystemContext>(options =>
+                options.UseNpgsql(Configuration.GetConnectionString("DefaultConnection")));
+
+            services.AddControllers();
+            services.AddScoped<TokenService>(provider => new TokenService(Configuration["Jwt:Key"]));
+            services.AddScoped<Logger>();
+            services.AddScoped<MsmqService>(provider => new MsmqService(Configuration["Msmq:QueuePath"]));
+            services.AddScoped<QueueProcessorService>();
+
+            // Configure log4net
+            var log4netConfigFile = Path.Combine(Directory.GetCurrentDirectory(), "Logs", "log4net.config");
+            XmlConfigurator.ConfigureAndWatch(new FileInfo(log4netConfigFile));
+        }
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+            else
+            {
+                app.UseExceptionHandler("/Home/Error");
+                app.UseHsts();
+            }
+
+            app.UseHttpsRedirection();
+            app.UseStaticFiles();
+            app.UseRouting();
+            app.UseAuthorization();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
+
+            // Initialize the database
+            SeedData.Initialize(app.ApplicationServices);
+        }
+    }
+}
+17. appsettings.json
+json
+Copy code
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=bank_system;Username=postgres;Password=password"
+  },
+  "Jwt": {
+    "Key": "your_secret_key"
+  },
+  "Msmq": {
+    "QueuePath": @".\private$\bankQueue"
+  }
+}
+PostgreSQL Table Creation
+sql
+Copy code
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    account_number VARCHAR(20) NOT NULL,
+    amount NUMERIC(18, 2) NOT NULL,
+    queue_name VARCHAR(50),
+    status VARCHAR(50)
+);
+
+CREATE TABLE queue_items (
+    id SERIAL PRIMARY KEY,
+    queue_name VARCHAR(50),
+    status VARCHAR(50),
+    user_name VARCHAR(100),
+    amount NUMERIC(18, 2)
+);
+
+CREATE TABLE user_queue_statuses (
+    id SERIAL PRIMARY KEY,
+    user_name VARCHAR(100),
+    queue_name VARCHAR(50),
+    status VARCHAR(50),
+    timestamp TIMESTAMP
+);
+How to Run
+Build the Project:
+
+bash
+Copy code
+dotnet build
+Run the Project:
+
+bash
+Copy code
+dotnet run
+Test APIs:
+
+Use Postman or a similar tool to make POST requests to /api/cash, /api/loan, and /api/accountsummary with user details.
+Check Logs:
+
+Logs are stored in the logs/application.log file, as configured in log4net.config.
+Check MSMQ:
+
+Use the Computer Management tool to view messages in the MSMQ queue.
+With this setup, you have a full implementation with logging, token generation, MSMQ prioritization, and PostgreSQL integration.
+
+
+msmq service seems to be incomplete
+ChatGPT
+Certainly! Let me provide a more complete MSMQ service implementation, including handling the queue with prioritization and logging.
+
+Complete MSMQ Service Implementation
+1. MSMQService.cs
+csharp
+Copy code
+using System;
+using System.Messaging;
+using log4net;
+
+namespace BankSystemApi.Services
+{
+    public class MsmqService
+    {
+        private readonly string _queuePath;
+        private static readonly ILog _logger = LogManager.GetLogger(typeof(MsmqService));
+
+        public MsmqService(string queuePath)
+        {
+            _queuePath = queuePath;
+        }
+
+        public void SendMessage(string message)
+        {
+            try
+            {
+                // Ensure the queue exists
+                if (!MessageQueue.Exists(_queuePath))
+                {
+                    MessageQueue.Create(_queuePath);
+                    _logger.Info($"Created queue at path {_queuePath}");
+                }
+
+                using (var queue = new MessageQueue(_queuePath))
+                {
+                    queue.Formatter = new XmlMessageFormatter(new String[] { "System.String,mscorlib" });
+                    var msmqMessage = new Message
+                    {
+                        Formatter = new XmlMessageFormatter(new String[] { "System.String,mscorlib" }),
+                        Body = message,
+                        Label = "User Message",
+                        AppSpecific = 1, // Custom property to identify the message type
+                        AttachSenderId = true
+                    };
+
+                    queue.Send(msmqMessage);
+                    _logger.Info($"Message sent to queue {_queuePath}: {message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Error sending message to queue.", ex);
+            }
+        }
+
+        public void ReceiveMessages()
+        {
+            try
+            {
+                if (MessageQueue.Exists(_queuePath))
+                {
+                    using (var queue = new MessageQueue(_queuePath))
+                    {
+                        queue.Formatter = new XmlMessageFormatter(new String[] { "System.String,mscorlib" });
+
+                        while (true)
+                        {
+                            var message = queue.GetMessage();
+                            if (message != null)
+                            {
+                                var body = message.Body.ToString();
+                                _logger.Info($"Received message: {body}");
+                                // Process message
+                                // In a real-world application, you would handle the message here
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    _logger.Warn($"Queue {_queuePath} does not exist.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Error receiving messages from queue.", ex);
+            }
+        }
+    }
+}
+2. TokenService.cs
+The TokenService class remains the same, as it deals with token generation and is independent of MSMQ.
+
+csharp
+Copy code
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
+
+namespace BankSystemApi.Services
+{
+    public class TokenService
+    {
+        private readonly string _key;
+
+        public TokenService(string key)
+        {
+            _key = key;
+        }
+
+        public string GenerateToken(string username)
+        {
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.Name, username)
+            };
+
+            var key = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(_key));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                claims: claims,
+                expires: DateTime.Now.AddMinutes(15),
+                signingCredentials: creds);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+    }
+}
+3. Logger.cs
+The Logger class remains the same, handling logging through log4net.
+
+csharp
+Copy code
+using log4net;
+
+namespace BankSystemApi.Services
+{
+    public class Logger
+    {
+        private static readonly ILog _logger = LogManager.GetLogger(typeof(Logger));
+
+        public void Log(LogLevel level, string message)
+        {
+            switch (level)
+            {
+                case LogLevel.Information:
+                    _logger.Info(message);
+                    break;
+                case LogLevel.Warning:
+                    _logger.Warn(message);
+                    break;
+                case LogLevel.Error:
+                    _logger.Error(message);
+                    break;
+            }
+        }
+    }
+
+    public enum LogLevel
+    {
+        Information,
+        Warning,
+        Error
+    }
+}
+4. QueueProcessorService.cs
+The QueueProcessorService handles the processing of messages with prioritization and updates the status in the PostgreSQL database.
+
+csharp
+Copy code
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using BankSystemApi.Data;
+using BankSystemApi.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace BankSystemApi.Services
+{
+    public class QueueProcessorService
+    {
+        private readonly BankSystemContext _context;
+        private readonly MsmqService _msmqService;
+        private readonly Logger _logger;
+
+        public QueueProcessorService(BankSystemContext context, MsmqService msmqService, Logger logger)
+        {
+            _context = context;
+            _msmqService = msmqService;
+            _logger = logger;
+        }
+
+        public async Task ProcessQueuesAsync()
+        {
+            var queues = new[] { "Cash", "Loan", "AccountSummary" };
+            foreach (var queueName in queues)
+            {
+                var queueItems = await _context.Users
+                    .Where(u => u.QueueName == queueName)
+                    .OrderByDescending(u => u.Amount) // Prioritize by amount
+                    .ToListAsync();
+
+                foreach (var user in queueItems)
+                {
+                    // Simulate processing with a 1-minute wait
+                    await Task.Delay(TimeSpan.FromMinutes(1));
+
+                    user.Status = "Processed";
+                    _context.Users.Update(user);
+                    await _context.SaveChangesAsync();
+
+                    // Log the processing status
+                    var status = new UserQueueStatus
+                    {
+                        UserName = user.Name,
+                        QueueName = queueName,
+                        Status = "Processed",
+                        Timestamp = DateTime.Now
+                    };
+                    _context.UserQueueStatuses.Add(status);
+                    await _context.SaveChangesAsync();
+
+                    // Send to MSMQ
+                    _msmqService.SendMessage($"User {user.Name} processed from {queueName} queue.");
+                }
+            }
+        }
+    }
+}
+5. Startup.cs
+Make sure the Startup.cs file is properly configured to inject MsmqService and other services.
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
+using BankSystemApi.Data;
+using BankSystemApi.Services;
+using log4net;
+using log4net.Config;
+using System.IO;
+
+namespace BankSystemApi
+{
+    public class Startup
+    {
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public IConfiguration Configuration { get; }
+
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddDbContext<BankSystemContext>(options =>
+                options.UseNpgsql(Configuration.GetConnectionString("DefaultConnection")));
+
+            services.AddControllers();
+            services.AddScoped<TokenService>(provider => new TokenService(Configuration["Jwt:Key"]));
+            services.AddScoped<Logger>();
+            services.AddScoped<MsmqService>(provider => new MsmqService(Configuration["Msmq:QueuePath"]));
+            services.AddScoped<QueueProcessorService>();
+
+            // Configure log4net
+            var log4netConfigFile = Path.Combine(Directory.GetCurrentDirectory(), "Logs", "log4net.config");
+            XmlConfigurator.ConfigureAndWatch(new FileInfo(log4netConfigFile));
+        }
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+            else
+            {
+                app.UseExceptionHandler("/Home/Error");
+                app.UseHsts();
+            }
+
+            app.UseHttpsRedirection();
+            app.UseStaticFiles();
+            app.UseRouting();
+            app.UseAuthorization();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
+
+            // Initialize the database
+            SeedData.Initialize(app.ApplicationServices);
+        }
+    }
+}
+Running the Application
+Build the Project:
+
+bash
+Copy code
+dotnet build
+Run the Project:
+
+bash
+Copy code
+dotnet run
+Start MSMQ Processing:
+
+If you want to start processing the queue, you need to call ProcessQueuesAsync method from somewhere in your application, typically from a background service or a scheduled task.
+Testing the API:
+
+Use Postman or a similar tool to send POST requests to /api/cash, /api/loan, and /api/accountsummary with user details.
+Check Logs:
+
+Logs are stored in the logs/application.log file, as configured in log4net.config.
+Check MSMQ:
+
+Use the Computer Management tool to view messages in the MSMQ queue.
+By following this structure, you can integrate MSMQ, PostgreSQL, log4net for logging, and token generation into your application.
+
+packages needs to be installed
+ChatGPT
+To set up the project with MSMQ, PostgreSQL, log4net, and other necessary components, you need to install several NuGet packages. Here's a list of the packages you need along with the installation commands:
+
+1. Entity Framework Core
+To work with PostgreSQL:
+
+bash
+Copy code
+dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL
+2. log4net
+For logging:
+
+bash
+Copy code
+dotnet add package log4net
+3. MSMQ (System.Messaging)
+For MSMQ support:
+
+bash
+Copy code
+dotnet add package System.Messaging
+4. JWT Authentication
+For token generation:
+
+bash
+Copy code
+dotnet add package Microsoft.IdentityModel.Tokens
+dotnet add package System.IdentityModel.Tokens.Jwt
+5. PostgreSQL
+To work with PostgreSQL:
+
+bash
+Copy code
+dotnet add package Npgsql
+Summary of Commands
+Here’s a consolidated list of commands to install all necessary packages:
+
+bash
+Copy code
+dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL
+dotnet add package log4net
+dotnet add package System.Messaging
+dotnet add package Microsoft.IdentityModel.Tokens
+dotnet add package System.IdentityModel.Tokens.Jwt
+dotnet add package Npgsql
+Installation Steps
+Navigate to the Project Directory:
+Open a terminal or command prompt and navigate to the root directory of your ASP.NET Core project.
+
+Run the Package Installation Commands:
+Execute the commands listed above to install all the required packages.
+
+Verifying the Installation
+Once the packages are installed, you can verify them by checking your project file (.csproj). It should include references to these packages, similar to:
+
+xml
+Copy code
+<ItemGroup>
+  <PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.7" />
+  <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="6.0.7" />
+  <PackageReference Include="log4net" Version="2.0.15" />
+  <PackageReference Include="System.Messaging" Version="4.0.0" />
+  <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="6.0.0" />
+  <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.0.0" />
+  <PackageReference Include="Npgsql" Version="6.0.7" />
+</ItemGroup>
+These commands and references will set up your project with the required dependencies for MSMQ, PostgreSQL, and logging with log4net.
+
+
+
+
+
+
