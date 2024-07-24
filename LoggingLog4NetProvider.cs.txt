@@ -1,0 +1,172 @@
+// Logging/Log4NetProvider.cs
+using Microsoft.Extensions.Logging;
+using log4net;
+using log4net.Config;
+using System;
+using System.IO;
+using System.Reflection;
+
+public class Log4NetProvider : ILoggerProvider
+{
+    private readonly string _log4NetConfigFile;
+
+    public Log4NetProvider(string log4NetConfigFile)
+    {
+        _log4NetConfigFile = log4NetConfigFile;
+        var logRepository = LogManager.GetRepository(Assembly.GetEntryAssembly());
+        XmlConfigurator.Configure(logRepository, new FileInfo(log4NetConfigFile));
+    }
+
+    public ILogger CreateLogger(string categoryName)
+    {
+        return new Log4NetLogger(categoryName);
+    }
+
+    public void Dispose()
+    {
+        // Optional: Dispose resources if necessary
+    }
+}
+
+public class Log4NetLogger : ILogger
+{
+    private readonly ILog _log;
+
+    public Log4NetLogger(string name)
+    {
+        _log = LogManager.GetLogger(name);
+    }
+
+    public IDisposable BeginScope<TState>(TState state) => null;
+
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return logLevel switch
+        {
+            LogLevel.Trace => _log.IsDebugEnabled,
+            LogLevel.Debug => _log.IsDebugEnabled,
+            LogLevel.Information => _log.IsInfoEnabled,
+            LogLevel.Warning => _log.IsWarnEnabled,
+            LogLevel.Error => _log.IsErrorEnabled,
+            LogLevel.Critical => _log.IsFatalEnabled,
+            _ => false,
+        };
+    }
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+    {
+        if (!IsEnabled(logLevel))
+            return;
+
+        var message = formatter(state, exception);
+
+        if (string.IsNullOrEmpty(message) && exception == null)
+            return;
+
+        switch (logLevel)
+        {
+            case LogLevel.Critical:
+                _log.Fatal(message);
+                break;
+            case LogLevel.Error:
+                _log.Error(message);
+                break;
+            case LogLevel.Warning:
+                _log.Warn(message);
+                break;
+            case LogLevel.Information:
+                _log.Info(message);
+                break;
+            case LogLevel.Debug:
+            case LogLevel.Trace:
+                _log.Debug(message);
+                break;
+            default:
+                _log.Warn($"Unknown log level {logLevel}. {message}");
+                break;
+        }
+
+        if (exception != null)
+            _log.Error(message, exception);
+    }
+}
+
+
+// Logging/Log4NetExtensions.cs
+using Microsoft.Extensions.Logging;
+
+public static class Log4NetExtensions
+{
+    public static ILoggingBuilder AddLog4Net(this ILoggingBuilder builder, string log4NetConfigFile)
+    {
+        builder.AddProvider(new Log4NetProvider(log4NetConfigFile));
+        return builder;
+    }
+}
+
+
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using BankSystemApi.Data;
+using BankSystemApi.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using System.IO;
+using log4net;
+
+namespace BankSystemApi
+{
+    public class Startup
+    {
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public IConfiguration Configuration { get; }
+
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddDbContext<BankSystemContext>(options =>
+                options.UseNpgsql(Configuration.GetConnectionString("DefaultConnection")));
+
+            services.AddDbContext<LoggingDataContext>(options =>
+                options.UseNpgsql(Configuration.GetConnectionString("LoggingDatabase")));
+
+            services.AddControllers();
+
+            services.AddSingleton(new TokenService(Configuration["Jwt:Key"]));
+            services.AddSingleton(new MsmqService(@".\Private$\BankQueue"));
+            services.AddTransient<QueueProcessorService>();
+            services.AddTransient<LoggerService>();
+
+            services.AddLogging(logging =>
+            {
+                logging.ClearProviders();
+                logging.AddLog4Net("log4net.config");
+            });
+        }
+
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+
+            app.UseRouting();
+            app.UseAuthorization();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
+
+            var logRepository = LogManager.GetRepository(System.Reflection.Assembly.GetEntryAssembly());
+            XmlConfigurator.Configure(logRepository, new FileInfo("log4net.config"));
+        }
+    }
+}
