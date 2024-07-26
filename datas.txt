@@ -1,0 +1,142 @@
+using Microsoft.EntityFrameworkCore;
+using QueueManagementSystem.Models;
+
+namespace QueueManagementSystem.Data
+{
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<Customer> Customers { get; set; }
+        public DbSet<Token> Tokens { get; set; }
+        public DbSet<QueueItem> QueueItems { get; set; }
+    }
+}
+2. LoggingDbContext.cs
+csharp
+Copy code
+using Microsoft.EntityFrameworkCore;
+using QueueManagementSystem.Models;
+
+namespace QueueManagementSystem.Data
+{
+    public class LoggingDbContext : DbContext
+    {
+        public LoggingDbContext(DbContextOptions<LoggingDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<LogEntry> LogEntries { get; set; }
+    }
+}
+Models
+1. Customer.cs
+csharp
+Copy code
+using System.ComponentModel.DataAnnotations;
+
+namespace QueueManagementSystem.Models
+{
+    public class Customer
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
+        [StringLength(100)]
+        public string Name { get; set; }
+
+        [Required]
+        public decimal Money { get; set; } // Represents the amount of money the customer has
+
+        public string Token { get; set; } // JWT Token
+    }
+}
+2. Token.cs
+csharp
+Copy code
+using System.ComponentModel.DataAnnotations;
+
+namespace QueueManagementSystem.Models
+{
+    public class Token
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
+        public string Value { get; set; }
+
+        [Required]
+        public int CustomerId { get; set; }
+    }
+}
+3. LogEntry.cs
+csharp
+Copy code
+using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace QueueManagementSystem.Models
+{
+    public class LogEntry
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
+        public DateTime Timestamp { get; set; }
+
+        [Required]
+        public string Message { get; set; }
+
+        [Required]
+        public string LogLevel { get; set; } // e.g., INFO, ERROR
+    }
+}
+4. QueueItem.cs
+csharp
+Copy code
+using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace QueueManagementSystem.Models
+{
+    public class QueueItem
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
+        public int CustomerId { get; set; }
+
+        [Required]
+        public string ServiceType { get; set; } // e.g., Cash, Loan
+
+        [Required]
+        public DateTime EnqueueTime { get; set; } // Time when the customer was enqueued
+
+        public DateTime? StartTime { get; set; } // Time when the service starts
+
+        public DateTime? CompletionTime { get; set; } // Time when the service is completed
+
+        [Required]
+        public string Status { get; set; } // e.g., Pending, InProgress, Completed
+    }
+}
+5. QueueStatus.cs
+csharp
+Copy code
+namespace QueueManagementSystem.Models
+{
+    public enum QueueStatus
+    {
+        Pending,
+        InProgress,
+        Completed
+    }
+}
