@@ -1,0 +1,188 @@
+sing Microsoft.IdentityModel.Tokens;
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+
+namespace QueueManagementSystem.Services
+{
+    public class TokenService
+    {
+        private readonly string _secretKey;
+        private readonly string _issuer;
+        private readonly int _expiryHours;
+
+        public TokenService(string secretKey, string issuer, int expiryHours = 1)
+        {
+            _secretKey = secretKey;
+            _issuer = issuer;
+            _expiryHours = expiryHours;
+        }
+
+        public string GenerateJwtToken(Customer customer)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_secretKey);
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[]
+                {
+                    new Claim(ClaimTypes.Name, customer.Name),
+                    new Claim(ClaimTypes.NameIdentifier, customer.Id.ToString())
+                }),
+                Expires = DateTime.UtcNow.AddHours(_expiryHours),
+                Issuer = _issuer,
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }
+    }
+}
+Updating Startup.cs or Program.cs
+To integrate the updated TokenService, ensure that it is properly configured in your Startup.cs or Program.cs:
+
+For .NET Core 3.1 (Startup.cs):
+
+csharp
+Copy code
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
+using QueueManagementSystem.Data;
+using QueueManagementSystem.Services;
+using System.Text;
+
+public class Startup
+{
+    public Startup(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public IConfiguration Configuration { get; }
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // Configure PostgreSQL database
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseNpgsql(Configuration.GetConnectionString("DefaultConnection")));
+
+        // Register TokenService with configuration values
+        services.AddSingleton<TokenService>(provider =>
+            new TokenService(
+                Configuration["Jwt:Key"],
+                Configuration["Jwt:Issuer"],
+                int.Parse(Configuration["Jwt:ExpiryHours"])
+            ));
+
+        // Register other services
+        services.AddTransient<QueueProcessorService>();
+        services.AddTransient<LoggerService>();
+
+        // Add controllers
+        services.AddControllers();
+
+        // Configure JWT Authentication
+        var key = Encoding.ASCII.GetBytes(Configuration["Jwt:Key"]);
+        services.AddAuthentication(x =>
+        {
+            x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddJwtBearer(x =>
+        {
+            x.RequireHttpsMetadata = false;
+            x.SaveToken = true;
+            x.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidIssuer = Configuration["Jwt:Issuer"],
+                ValidAudience = Configuration["Jwt:Audience"]
+            };
+        });
+
+        // Configure logging
+        services.AddLogging(builder =>
+        {
+            builder.ClearProviders();
+            builder.AddLog4Net();
+        });
+    }
+
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseExceptionHandler("/Home/Error");
+            app.UseHsts();
+        }
+
+        app.UseHttpsRedirection();
+        app.UseStaticFiles();
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllers();
+        });
+    }
+}
+Updating appsettings.json
+Make sure your appsettings.json includes configuration settings for JWT.
+
+appsettings.json
+
+json
+Copy code
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Database=queue_management_system;Username=yourusername;Password=yourpassword"
+  },
+  "Jwt": {
+    "Key": "your_secret_key", // Change this to your actual secret key
+    "Issuer": "your_issuer",
+    "Audience": "your_audience",
+    "ExpiryHours": "1"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning"
+    }
+  },
+  "AllowedHosts": "*"
+}
+Summary
+Updated TokenService:
+
+Uses constructor parameters for the secret key, issuer, and token expiry.
+Generates JWT tokens with customizable expiration time.
+Updated Startup.cs:
+
+Configures TokenService with values from appsettings.json.
+Sets up JWT authentication with issuer and audience validation.
+Updated appsettings.json:
+
+Includes JWT settings for secret key, issuer, audience, and token expiry.
+By following these steps, you'll have a more flexible and secure JWT authentication setup for your .NET Core application.
+
+
+
+
+
+
