@@ -1,0 +1,99 @@
+public ClaimsPrincipal GetPrincipalFromExpiredToken(string token)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_jwtKey);
+            var tokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateIssuer = false,
+                ValidateAudience = false,
+                // ClockSkew compensates for server time drift.
+                ClockSkew = TimeSpan.Zero,
+                ValidateLifetime = false // Ignore token expiration for this check.
+            };
+
+            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken securityToken);
+            if (securityToken is JwtSecurityToken jwtSecurityToken)
+            {
+                if (jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    return principal;
+                }
+            }
+
+            throw new SecurityTokenException("Invalid token");
+        }
+    }
+}
+\
+
+
+
+
+
+CashServiceController
+csharp
+Copy code
+using Microsoft.AspNetCore.Mvc;
+using BankSystemApi.Models;
+using BankSystemApi.Services;
+using BankSystemApi.Data;
+using System.Threading.Tasks;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class CashServiceController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private readonly QueueProcessorService _queueProcessorService;
+        private readonly LoggerService _loggerService;
+        private readonly TokenService _tokenService;
+
+        public CashServiceController(BankSystemContext context, QueueProcessorService queueProcessorService, LoggerService loggerService, TokenService tokenService)
+        {
+            _context = context;
+            _queueProcessorService = queueProcessorService;
+            _loggerService = loggerService;
+            _tokenService = tokenService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Post([FromBody] ServiceRequest request, [FromHeader] string authorization)
+        {
+            if (string.IsNullOrWhiteSpace(authorization) || !authorization.StartsWith("Bearer "))
+            {
+                return Unauthorized("Token is missing or invalid.");
+            }
+
+            var token = authorization.Substring("Bearer ".Length).Trim();
+
+            ClaimsPrincipal principal;
+            try
+            {
+                principal = _tokenService.GetPrincipalFromExpiredToken(token);
+            }
+            catch
+            {
+                return Unauthorized("Token is invalid.");
+            }
+
+            var username = principal.FindFirst(ClaimTypes.Name)?.Value;
+            if (username == null || username != request.UserName)
+            {
+                return Unauthorized("Token does not match the request username.");
+            }
+
+            request.ServiceType = "Cash";
+            _context.ServiceRequests.Add(request);
+            await _context.SaveChangesAsync();
+
+            _queueProcessorService.ProcessQueue(request.ServiceType);
+            _loggerService.Log("INFO", $"Cash request from {request.UserName} added to queue.");
+
+            return Ok(request);
+        }
+    }
+}
