@@ -1,0 +1,167 @@
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const CashService = () => {
+  const [userName, setUserName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [response, setResponse] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post('http://localhost:5000/api/cash', {
+        userName,
+        amount
+      });
+      setResponse(res.data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return (
+    <div>
+      <h2>Cash Service</h2>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          placeholder="User Name"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          required
+        />
+        <input
+          type="number"
+          placeholder="Amount"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+        />
+        <button type="submit">Submit</button>
+      </form>
+      {response && <div>Response: {JSON.stringify(response)}</div>}
+    </div>
+  );
+};
+
+export default CashService;
+3.2. LoanService.js
+Create src/components/LoanService.js:
+
+jsx
+Copy code
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const LoanService = () => {
+  const [userName, setUserName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [response, setResponse] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post('http://localhost:5000/api/loan', {
+        userName,
+        amount
+      });
+      setResponse(res.data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return (
+    <div>
+      <h2>Loan Service</h2>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          placeholder="User Name"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          required
+        />
+        <input
+          type="number"
+          placeholder="Amount"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+        />
+        <button type="submit">Submit</button>
+      </form>
+      {response && <div>Response: {JSON.stringify(response)}</div>}
+    </div>
+  );
+};
+
+export default LoanService;
+3.3. AccountSummary.js
+Create src/components/AccountSummary.js:
+
+jsx
+Copy code
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const AccountSummary = () => {
+  const [userName, setUserName] = useState('');
+  const [response, setResponse] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post('http://localhost:5000/api/accountsummary', {
+        userName
+      });
+      setResponse(res.data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return (
+    <div>
+      <h2>Account Summary</h2>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          placeholder="User Name"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          required
+        />
+        <button type="submit">Submit</button>
+      </form>
+      {response && <div>Response: {JSON.stringify(response)}</div>}
+    </div>
+  );
+};
+
+export default AccountSummary;
+4. Set Up Routing in React
+Modify src/App.js to include routing for the new components:
+
+jsx
+Copy code
+import React from 'react';
+import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+import CashService from './components/CashService';
+import LoanService from './components/LoanService';
+import AccountSummary from './components/AccountSummary';
+
+const App = () => {
+  return (
+    <Router>
+      <div>
+        <h1>Bank Service System</h1>
+        <Switch>
+          <Route path="/cash" component={CashService} />
+          <Route path="/loan" component={LoanService} />
+          <Route path="/accountsummary" component={AccountSummary} />
+        </Switch>
+      </div>
+    </Router>
+  );
+};
