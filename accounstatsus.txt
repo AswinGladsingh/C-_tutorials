@@ -1,0 +1,52 @@
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using BankSystemApi.Data;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AccountStatusController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+
+        public AccountStatusController(BankSystemContext context)
+        {
+            _context = context;
+        }
+
+        [HttpPost("status")]
+        public async Task<IActionResult> GetAccountStatus([FromBody] UsernameRequest request)
+        {
+            if (string.IsNullOrEmpty(request.Username))
+            {
+                return BadRequest("Username is required.");
+            }
+
+            // Fetch user details and ensure the token is not null
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Name == request.Username && u.Token != null);
+
+            if (user == null)
+            {
+                return NotFound("User not found or token is null.");
+            }
+
+            // Fetch service requests for the user
+            var serviceRequests = await _context.ServiceRequests
+                .Where(sr => sr.UserId == user.Id)
+                .ToListAsync();
+
+            return Ok(serviceRequests);
+        }
+    }
+
+    public class UsernameRequest
+    {
+        public string Username { get; set; }
+    }
+}
