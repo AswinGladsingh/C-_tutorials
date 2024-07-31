@@ -1,0 +1,58 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using BankSystemApi.Data;
+using BankSystemApi.Models;
+
+namespace BankSystemApi.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class StatusController : ControllerBase
+    {
+        private readonly BankSystemContext _context;
+        private static readonly object _lock = new object();
+        private static DateTime _lastUpdateTime = DateTime.UtcNow;
+        private static List<User> _userCache = new List<User>();
+
+        public StatusController(BankSystemContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet("status")]
+        public async Task<IActionResult> GetStatus()
+        {
+            lock (_lock)
+            {
+                // Check if the cache needs to be updated
+                if ((DateTime.UtcNow - _lastUpdateTime).TotalMinutes >= 1)
+                {
+                    _lastUpdateTime = DateTime.UtcNow;
+
+                    // Read data from the Users table
+                    _userCache = _context.Users
+                        .OrderByDescending(u => u.Amount)
+                        .ToList();
+                }
+            }
+
+            // Determine the status of each user
+            var statusList = _userCache.Select((user, index) => new
+            {
+                user.Name,
+                Status = index switch
+                {
+                    0 => "Completed",
+                    < 4 => "In Queue",
+                    _ => "Waiting"
+                }
+            }).ToList();
+
+            return Ok(statusList);
+        }
+    }
+}
