@@ -1,0 +1,54 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using BankSystemApi.Data;
+
+namespace BankSystemApi.Services
+{
+    public class UserStatusBackgroundService : BackgroundService
+    {
+        private readonly IServiceScopeFactory _serviceScopeFactory;
+
+        public UserStatusBackgroundService(IServiceScopeFactory serviceScopeFactory)
+        {
+            _serviceScopeFactory = serviceScopeFactory;
+        }
+
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                using (var scope = _serviceScopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<BankSystemContext>();
+                    var users = context.Users
+                        .OrderByDescending(u => u.Amount)
+                        .ToList();
+
+                    for (int i = 0; i < users.Count; i++)
+                    {
+                        if (i == 0)
+                        {
+                            users[i].Status = "Completed";
+                        }
+                        else if (i < 4)
+                        {
+                            users[i].Status = "In Queue";
+                        }
+                        else
+                        {
+                            users[i].Status = "Waiting";
+                        }
+                    }
+
+                    await context.SaveChangesAsync(stoppingToken);
+                }
+
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
+        }
+    }
+}
