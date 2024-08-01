@@ -1,0 +1,85 @@
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const QueueComponent = () => {
+  const [amount, setAmount] = useState('');
+  const [name, setName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [message, setMessage] = useState('');
+
+  // Function to fetch user details based on name and account number
+  const fetchUserDetails = async () => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/login', {
+        Name: name,
+        AccountNumber: accountNumber,
+        IsCreatingAccount: false // Indicate that this is a login request
+      });
+
+      if (response.status === 200 && response.data.exists) {
+        // User exists; fetch additional details if needed
+        setName(response.data.Name);
+        setAccountNumber(response.data.AccountNumber);
+      } else {
+        setMessage('Account does not exist.');
+      }
+    } catch (error) {
+      setMessage('Failed to fetch user details.');
+    }
+  };
+
+  // Function to add the request to the queue
+  const handleAddToQueue = async () => {
+    if (!name || !accountNumber || !amount) {
+      setMessage('Please provide name, account number, and amount.');
+      return;
+    }
+
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/queue', {
+        Name: name,
+        AccountNumber: accountNumber,
+        Amount: parseFloat(amount),
+        QueueName: "Cash", // Default queue name
+        Status: "Active" // Default status
+      });
+
+      if (response.status === 200) {
+        setMessage('Request added to queue successfully!');
+      } else {
+        setMessage('Error adding request to queue.');
+      }
+    } catch (error) {
+      setMessage('An error occurred. Please try again.');
+    }
+  };
+
+  return (
+    <div>
+      <h1>Add to Queue</h1>
+      <input
+        type="text"
+        placeholder="UserName"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <input
+        type="text"
+        placeholder="AccountNumber"
+        value={accountNumber}
+        onChange={(e) => setAccountNumber(e.target.value)}
+      />
+      <button onClick={fetchUserDetails}>Get User Details</button>
+      <input
+        type="number"
+        placeholder="Amount"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+      />
+      <button onClick={handleAddToQueue}>Add to Queue</button>
+      {message && <p>{message}</p>}
+    </div>
+  );
+};
+
+export default QueueComponent;
