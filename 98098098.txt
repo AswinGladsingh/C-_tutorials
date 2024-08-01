@@ -1,0 +1,66 @@
+import React, { useState } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+
+const LoginComponent = () => {
+  const [userName, setUserName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [message, setMessage] = useState('');
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+  const navigate = useNavigate();
+
+  const handleSubmit = async () => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/login', {
+        Name: userName,
+        AccountNumber: accountNumber,
+        IsCreatingAccount: isCreatingAccount
+      });
+
+      if (isCreatingAccount) {
+        if (response.status === 200) {
+          setMessage('Account created successfully!');
+        } else if (response.status === 409) {
+          setMessage('Account with this username or account number already exists.');
+        } else {
+          setMessage('Error creating account. Please try again.');
+        }
+      } else {
+        if (response.status === 200 && response.data.exists) {
+          navigate('/service-page'); // Navigate to the service page if the user exists
+        } else {
+          setMessage('Account does not exist.');
+        }
+      }
+    } catch (error) {
+      setMessage('An error occurred. Please try again.');
+    }
+  };
+
+  return (
+    <div>
+      <h1>{isCreatingAccount ? 'Create Account' : 'Login'}</h1>
+      <input
+        type="text"
+        placeholder="UserName"
+        value={userName}
+        onChange={(e) => setUserName(e.target.value)}
+      />
+      <input
+        type="text"
+        placeholder="AccountNumber"
+        value={accountNumber}
+        onChange={(e) => setAccountNumber(e.target.value)}
+      />
+      <button onClick={handleSubmit}>
+        {isCreatingAccount ? 'Create Account' : 'Login'}
+      </button>
+      <button onClick={() => setIsCreatingAccount(!isCreatingAccount)}>
+        {isCreatingAccount ? 'Switch to Login' : 'Switch to Create Account'}
+      </button>
+      {message && <p>{message}</p>}
+    </div>
+  );
+};
+
+export default LoginComponent;
