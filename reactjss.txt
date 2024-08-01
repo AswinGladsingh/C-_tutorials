@@ -1,0 +1,65 @@
+import React, { useState } from 'react';
+import axios from 'axios';
+import { useHistory } from 'react-router-dom';
+
+const LoginComponent = () => {
+  const [userName, setUserName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [message, setMessage] = useState('');
+  const history = useHistory();
+
+  const handleLogin = async () => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/login', {
+        Name: userName,
+        AccountNumber: accountNumber
+      });
+      if (response.status === 200) {
+        history.push('/service-page');
+      }
+    } catch (error) {
+      if (error.response && error.response.status === 401) {
+        setMessage('Account does not exist.');
+      }
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/queue', {
+        Name: userName,
+        AccountNumber: accountNumber
+      });
+      if (response.status === 200) {
+        setMessage('Account created successfully!');
+      }
+    } catch (error) {
+      setMessage('Error creating account. Please try again.');
+    }
+  };
+
+  return (
+    <div>
+      <h1>Login</h1>
+      <input
+        type="text"
+        placeholder="UserName"
+        value={userName}
+        onChange={(e) => setUserName(e.target.value)}
+      />
+      <input
+        type="text"
+        placeholder="AccountNumber"
+        value={accountNumber}
+        onChange={(e) => setAccountNumber(e.target.value)}
+      />
+      <button onClick={handleLogin}>Login</button>
+      <button onClick={handleCreateAccount}>Create Account</button>
+      {message && <p>{message}</p>}
+    </div>
+  );
+};
+
+export default LoginComponent;
+
+
