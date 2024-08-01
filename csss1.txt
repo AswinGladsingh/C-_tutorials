@@ -1,0 +1,185 @@
+.queue-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 20px;
+}
+
+.input-group {
+  display: flex;
+  gap: 10px; /* Space between input fields */
+  margin-bottom: 20px;
+}
+
+.input-field {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px; /* Space between buttons */
+}
+
+button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+p {
+  margin-top: 20px;
+  color: red;
+}
+
+
+
+import React, { useState } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+
+const LoginComponent = () => {
+  const [name, setName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [message, setMessage] = useState('');
+  const navigate = useNavigate();
+
+  const handleLogin = async () => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/login', {
+        Name: name,
+        AccountNumber: accountNumber,
+        IsCreatingAccount: false
+      });
+
+      if (response.status === 200) {
+        if (response.data.isFirstUser) {
+          // Store user info in sessionStorage
+          sessionStorage.setItem('userName', response.data.Name);
+          sessionStorage.setItem('accountNumber', response.data.AccountNumber);
+          navigate('/services');
+        } else {
+          setMessage('Account does not exist or you are not the first to log in.');
+        }
+      }
+    } catch (error) {
+      setMessage('Failed to log in.');
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/login', {
+        Name: name,
+        AccountNumber: accountNumber,
+        IsCreatingAccount: true
+      });
+
+      if (response.status === 200) {
+        setMessage('Account created successfully.');
+      }
+    } catch (error) {
+      setMessage('Failed to create account.');
+    }
+  };
+
+  return (
+    <div className="login-container">
+      <h1>Login</h1>
+      <input
+        type="text"
+        placeholder="UserName"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <input
+        type="text"
+        placeholder="AccountNumber"
+        value={accountNumber}
+        onChange={(e) => setAccountNumber(e.target.value)}
+      />
+      <button onClick={handleLogin}>Login</button>
+      <button onClick={handleCreateAccount}>Create Account</button>
+      {message && <p>{message}</p>}
+    </div>
+  );
+};
+
+export default LoginComponent;
+
+
+import React, { useState } from 'react';
+import axios from 'axios';
+import './QueueComponent.css';
+
+const QueueComponent = () => {
+  const [amount, setAmount] = useState('');
+  const [message, setMessage] = useState('');
+
+  const name = sessionStorage.getItem('userName');
+  const accountNumber = sessionStorage.getItem('accountNumber');
+
+  const handleAddToQueue = async () => {
+    if (!amount) {
+      setMessage('Please provide amount.');
+      return;
+    }
+
+    try {
+      const response = await axios.post('http://localhost:5000/api/bank/queue', {
+        Name: name,
+        AccountNumber: accountNumber,
+        Amount: parseFloat(amount),
+        QueueName: "Cash",
+        Status: "Active"
+      });
+
+      if (response.status === 200) {
+        setMessage('Request added to queue successfully!');
+      } else {
+        setMessage('Error adding request to queue.');
+      }
+    } catch (error) {
+      setMessage('An error occurred. Please try again.');
+    }
+  };
+
+  return (
+    <div className="queue-container">
+      <h1>Add to Queue</h1>
+      <input
+        type="number"
+        placeholder="Amount"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        className="input-field"
+      />
+      <button onClick={handleAddToQueue}>Add to Queue</button>
+      {message && <p>{message}</p>}
+    </div>
+  );
+};
+
+export default QueueComponent;
+
+
+import React from 'react';
+import { Navigate, Outlet } from 'react-router-dom';
+
+const ProtectedRoute = () => {
+  const isLoggedIn = sessionStorage.getItem('userName') && sessionStorage.getItem('accountNumber');
+
+  return isLoggedIn ? <Outlet /> : <Navigate to="/" />;
+};
+
+export default ProtectedRoute;
+
+
