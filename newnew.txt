@@ -1,0 +1,93 @@
+[HttpPost("status")]
+public async Task<IActionResult> PostStatus([FromBody] ServiceRequest serviceRequest)
+{
+    // Check if the request body is null
+    if (serviceRequest == null)
+    {
+        return BadRequest("Request body cannot be null.");
+    }
+
+    // Check if QueueName is present and valid
+    if (string.IsNullOrEmpty(serviceRequest.QueueName))
+    {
+        return BadRequest("QueueName is required.");
+    }
+
+    var validQueueNames = new[] { "Cash", "Loan" }; // List of valid queue names
+    if (!validQueueNames.Contains(serviceRequest.QueueName))
+    {
+        return BadRequest("Invalid QueueName.");
+    }
+
+    var now = DateTime.UtcNow;
+    var elapsedMinutes = (now - _lastUpdateTime).TotalMinutes;
+
+    // Update _lastUpdateTime if more than 30 minutes have passed
+    if (elapsedMinutes >= 30)
+    {
+        // Update all statuses to "Completed" in CashStatus table
+        var allRequests = await _context.CashStatuses
+            .Where(r => r.Status == "In Queue" && (now - r.StatusUpdatedAt).TotalMinutes >= 30)
+            .ToListAsync();
+        foreach (var request in allRequests)
+        {
+            request.Status = "Completed";
+        }
+        _context.CashStatuses.UpdateRange(allRequests);
+        await _context.SaveChangesAsync();
+
+        // Update _lastUpdateTime
+        _lastUpdateTime = now;
+    }
+
+    // Get existing statuses from the CashStatus table
+    var existingStatuses = await _context.CashStatuses.ToListAsync();
+
+    // Update statuses that have been "Waiting" for 5 minutes to "In Queue"
+    foreach (var status in existingStatuses
+        .Where(s => s.Status == "Waiting" && (now - s.StatusUpdatedAt).TotalMinutes >= 5))
+    {
+        status.Status = "In Queue";
+        status.StatusUpdatedAt = now;
+    }
+    _context.CashStatuses.UpdateRange(existingStatuses);
+    await _context.SaveChangesAsync();
+
+    // Filter users by service type and order by amount
+    var users = await _context.Users
+        .Where(u => u.ServiceType == serviceRequest.QueueName)
+        .OrderByDescending(u => u.Amount)
+        .ToListAsync();
+
+    // Determine the status based on amount and elapsed time
+    var statusList = users.Select((user, index) => new CashStatus
+    {
+        Name = user.Name,
+        Amount = user.Amount,
+        Status = (index >= 20) ? "Waiting" : // Set status to "Waiting" if index is 20 or greater
+                 (user.Amount > 10000) ? "High Priority" :
+                 (now - _lastUpdateTime).TotalMinutes < 1 ? "In Queue" :
+                 "Waiting",
+        StatusUpdatedAt = now
+    }).ToList();
+
+    // Add or update statuses in the CashStatus table
+    foreach (var status in statusList)
+    {
+        var existingStatus = existingStatuses.FirstOrDefault(s => s.Name == status.Name);
+        if (existingStatus != null)
+        {
+            existingStatus.Amount = status.Amount;
+            existingStatus.Status = status.Status;
+            existingStatus.StatusUpdatedAt = status.StatusUpdatedAt;
+            _context.CashStatuses.Update(existingStatus);
+        }
+        else
+        {
+            await _context.CashStatuses.AddAsync(status);
+        }
+    }
+    await _context.SaveChangesAsync();
+
+    return Ok(statusList);
+}
