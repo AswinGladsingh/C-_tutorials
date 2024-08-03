@@ -1,0 +1,62 @@
+[HttpPost("status")]
+public async Task<IActionResult> PostStatus([FromBody] ServiceRequest serviceRequest)
+{
+    if (serviceRequest == null || string.IsNullOrEmpty(serviceRequest.QueueName))
+    {
+        return BadRequest("Invalid service request");
+    }
+
+    var now = DateTime.UtcNow;
+    var elapsedMinutes = (now - _lastUpdateTime).TotalMinutes;
+
+    // Update _lastUpdateTime if more than 30 minutes have passed
+    if (elapsedMinutes >= 30)
+    {
+        // Update all statuses to "Completed" in CashStatus table
+        var allRequests = await _context.CashStatuses.ToListAsync();
+        foreach (var request in allRequests)
+        {
+            request.Status = "Completed";
+        }
+        _context.CashStatuses.UpdateRange(allRequests);
+        await _context.SaveChangesAsync();
+
+        // Update _lastUpdateTime
+        _lastUpdateTime = now;
+    }
+
+    // Get existing statuses from the CashStatus table
+    var existingStatuses = await _context.CashStatuses.ToListAsync();
+
+    // Update statuses that have been "Waiting" for 5 minutes to "In Queue"
+    foreach (var status in existingStatuses.Where(s => s.Status == "Waiting" && (now - s.StatusUpdatedAt).TotalMinutes >= 5))
+    {
+        status.Status = "In Queue";
+        status.StatusUpdatedAt = now;
+    }
+
+    // Filter users by service type and order by amount
+    var users = await _context.Users
+        .Where(u => u.ServiceType == serviceRequest.QueueName)
+        .OrderByDescending(u => u.Amount)
+        .ToListAsync();
+
+    // Determine the status based on amount and elapsed time
+    var statusList = users.Select((user, index) => new CashStatus
+    {
+        Name = user.Name,
+        Status = (index >= 20) ? "Waiting" : // Set status to "Waiting" if index is 20 or greater
+                 (user.Amount > 10000) ? "High Priority" :
+                 (now - _lastUpdateTime).TotalMinutes < 1 ? "In Queue" :
+                 index == 0 ? "Completed" :
+                 index < 4 ? "In Queue" :
+                 "Waiting",
+        StatusUpdatedAt = now
+    }).ToList();
+
+    // Add new statuses to the CashStatus table
+    await _context.CashStatuses.AddRangeAsync(statusList);
+    await _context.SaveChangesAsync();
+
+    return Ok(statusList);
+}
