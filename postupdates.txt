@@ -1,0 +1,87 @@
+[HttpPost("status")]
+public async Task<IActionResult> PostStatus([FromBody] ServiceRequest serviceRequest)
+{
+    if (serviceRequest == null || string.IsNullOrEmpty(serviceRequest.QueueName))
+    {
+        return BadRequest("Invalid service request.");
+    }
+
+    // Ensure the QueueName is valid
+    var validQueueNames = new[] { "Cash", "Loan" };
+    if (!validQueueNames.Contains(serviceRequest.QueueName))
+    {
+        return BadRequest("Invalid QueueName.");
+    }
+
+    var now = DateTime.UtcNow;
+    var elapsedMinutes = (now - _lastUpdateTime).TotalMinutes;
+
+    // Update _lastUpdateTime if more than 30 minutes have passed
+    if (elapsedMinutes >= 30)
+    {
+        var allRequests = await _context.CashStatuses.ToListAsync();
+        foreach (var request in allRequests)
+        {
+            request.Status = "Completed";
+        }
+        _context.CashStatuses.UpdateRange(allRequests);
+        await _context.SaveChangesAsync();
+
+        _lastUpdateTime = now;
+    }
+
+    // Retrieve existing statuses
+    var existingStatuses = await _context.CashStatuses
+        .Where(s => s.Status != "Completed") // Exclude completed records
+        .ToListAsync();
+
+    // Update statuses that have been "Waiting" for 5 minutes to "In Queue"
+    foreach (var status in existingStatuses
+        .Where(s => s.Status == "Waiting" && (now - s.StatusUpdatedAt).TotalMinutes >= 5))
+    {
+        status.Status = "In Queue";
+        status.StatusUpdatedAt = now;
+    }
+
+    // Remove existing status for the same user if it exists
+    var userName = "SampleUser"; // Replace with actual user identification logic
+    var existingRecord = existingStatuses
+        .FirstOrDefault(s => s.Name == userName);
+
+    if (existingRecord != null)
+    {
+        _context.CashStatuses.Remove(existingRecord);
+        await _context.SaveChangesAsync();
+    }
+
+    // Insert or update the new record
+    var newStatus = new CashStatus
+    {
+        Name = userName, // Replace with actual user identification logic
+        Status = serviceRequest.Amount > 10000 ? "High Priority" : "Waiting",
+        StatusUpdatedAt = now
+    };
+
+    await _context.CashStatuses.AddAsync(newStatus);
+    await _context.SaveChangesAsync();
+
+    // Retrieve updated statuses
+    var updatedStatuses = await _context.CashStatuses
+        .Where(s => s.Status != "Completed") // Exclude completed records
+        .OrderByDescending(s => s.Status == "High Priority") // "High Priority" first
+        .ThenBy(s => s.Status == "In Queue") // "In Queue" next
+        .ThenByDescending(s => s.StatusUpdatedAt) // Most recent first
+        .ToListAsync();
+
+    // Ensure the status list includes the new record
+    var orderedStatuses = updatedStatuses
+        .OrderBy(s => s.Status == "High Priority" ? 0 : (s.Status == "In Queue" ? 1 : 2))
+        .ThenByDescending(s => s.StatusUpdatedAt)
+        .ToList();
+
+    // Update the CashStatuses table with the reordered statuses
+    _context.CashStatuses.UpdateRange(orderedStatuses);
+    await _context.SaveChangesAsync();
+
+    return Ok(orderedStatuses);
+}
