@@ -1,0 +1,50 @@
+[HttpPost("status")]
+public async Task<IActionResult> PostStatus([FromBody] ServiceRequest serviceRequest)
+{
+    if (serviceRequest == null || string.IsNullOrEmpty(serviceRequest.QueueName))
+    {
+        return BadRequest("Invalid service request");
+    }
+
+    var now = DateTime.UtcNow;
+    var elapsedMinutes = (now - _lastUpdateTime).TotalMinutes;
+
+    // Update _lastUpdateTime if more than 30 minutes have passed
+    if (elapsedMinutes >= 30)
+    {
+        // Update all statuses to "Completed" in CashStatus table
+        var allRequests = await _context.CashStatuses.ToListAsync();
+        foreach (var request in allRequests)
+        {
+            request.Status = "Completed";
+        }
+        _context.CashStatuses.UpdateRange(allRequests);
+        await _context.SaveChangesAsync();
+
+        // Update _lastUpdateTime
+        _lastUpdateTime = now;
+    }
+
+    // Filter users by service type and order by amount
+    var users = await _context.Users
+        .Where(u => u.ServiceType == serviceRequest.QueueName)
+        .OrderByDescending(u => u.Amount)
+        .ToListAsync();
+
+    // Determine the status based on amount and elapsed time
+    var statusList = users.Select((user, index) => new CashStatus
+    {
+        Name = user.Name,
+        Status = (user.Amount > 10000) ? "High Priority" :
+                 (now - _lastUpdateTime).TotalMinutes < 1 ? "In Queue" :
+                 index == 0 ? "Completed" :
+                 index < 4 ? "In Queue" :
+                 "Waiting"
+    }).ToList();
+
+    // Push the status list to the CashStatus table
+    await _context.CashStatuses.AddRangeAsync(statusList);
+    await _context.SaveChangesAsync();
+
+    return Ok(statusList);
+}
